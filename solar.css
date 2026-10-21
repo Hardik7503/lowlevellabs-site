@@ -59,3 +59,21 @@
 @media(max-width:650px){.solar-hero{min-height:auto;padding:25px 12px 28px}.solar-intro{padding-inline:8px;margin-bottom:0}.solar-intro h1{font-size:32px}.solar-intro p{font-size:11px}.solar-stage{height:470px;width:720px;max-width:none;left:50%;margin-left:-360px;transform:scale(.57);transform-origin:top center;margin-bottom:-200px}.solar-hero.world-open .solar-stage{transform:scale(.57)}.solar-hero.world-open .planet:not(.is-active){opacity:.18}.solar-article-panel{position:fixed;top:auto;bottom:18px;left:12px;right:12px;transform:none;width:auto;max-height:72svh;overflow:auto;padding:22px 18px 18px}.solar-bottom{grid-template-columns:1fr;gap:18px;padding:0 10px}.solar-stats{justify-content:center;gap:13px}.solar-stats strong{font-size:14px}.solar-stats span{font-size:8px}.solar-stats i{height:28px}.solar-stats>div:last-child{display:none}.solar-scroll{margin-top:4px}}
 @media(max-width:380px){.solar-stage{transform:scale(.49);margin-bottom:-240px}.solar-hero.world-open .solar-stage{transform:scale(.49)}.solar-stats{gap:9px}}
 @media(prefers-reduced-motion:reduce){.solar-hero *, .solar-hero *:before,.solar-hero *:after{animation:none!important;transition:none!important}}
+
+/* Scroll-driven, continuously orbiting solar system */
+.solar-stage{perspective:1100px}
+.planet{transform-origin:50% 50%;animation:planetDrift 7s ease-in-out infinite}
+.planet-boot{animation-delay:-1s}.planet-arch{animation-delay:-3s}.planet-os{animation-delay:-4.5s}.planet-drivers{animation-delay:-2s}.planet-memory{animation-delay:-5.5s}.planet-multi{animation-delay:-2.7s}.planet-io{animation-delay:-4s}.planet-debug{animation-delay:-.5s}
+.planet:hover,.planet:focus-visible{animation-play-state:paused;transform:scale(1.12)}
+.planet.is-active{animation-play-state:paused}
+.orbit{animation:orbitGlow 12s ease-in-out infinite}
+.orbit-two{animation-delay:-2s}.orbit-three{animation-delay:-4s}.orbit-four{animation-delay:-6s}.orbit-five{animation-delay:-8s}.orbit-six{animation-delay:-10s}
+.cpu-sun{will-change:transform}
+.solar-hero .solar-stage{--scroll-zoom:1;transform:scale(var(--scroll-zoom));transform-origin:50% 50%;will-change:transform}
+.solar-hero.world-open .solar-stage{transform:scale(calc(var(--scroll-zoom,1) * 1.015))}
+@keyframes planetDrift{0%,100%{translate:0 0}50%{translate:0 -7px}}
+@keyframes orbitGlow{0%,100%{opacity:.62}50%{opacity:1}}
+@media(max-width:1100px){.solar-hero .solar-stage{transform:scale(calc(.87 * var(--scroll-zoom,1)));}.solar-hero.world-open .solar-stage{transform:scale(calc(.87 * var(--scroll-zoom,1) * 1.015));}}
+@media(max-width:650px){.solar-hero .solar-stage{transform:scale(calc(.57 * var(--scroll-zoom,1)));}.solar-hero.world-open .solar-stage{transform:scale(calc(.57 * var(--scroll-zoom,1) * 1.015));}}
+@media(max-width:380px){.solar-hero .solar-stage{transform:scale(calc(.49 * var(--scroll-zoom,1)));}.solar-hero.world-open .solar-stage{transform:scale(calc(.49 * var(--scroll-zoom,1) * 1.015));}}
+@media(prefers-reduced-motion:reduce){.planet,.orbit{animation:none!important}}
