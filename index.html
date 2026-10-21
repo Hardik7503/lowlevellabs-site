@@ -20,7 +20,32 @@
   <div class="solar-stage" id="solarStage">
     <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="orbit orbit-four"></div><div class="orbit orbit-five"></div><div class="orbit orbit-six"></div><div class="orbit orbit-seven"></div><div class="orbit orbit-eight"></div>
     <div class="cpu-sun" aria-label="Central CPU representing the core of computing">
-      <div class="cpu-glow"></div><svg viewBox="0 0 240 240" role="img" aria-label="Golden central CPU chip"><defs><linearGradient id="cpuGold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff0ad"/><stop offset=".32" stop-color="#d98a28"/><stop offset=".62" stop-color="#8b4b13"/><stop offset="1" stop-color="#ffd36d"/></linearGradient><linearGradient id="cpuTop" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="#fff0bd"/><stop offset=".5" stop-color="#d9a447"/><stop offset="1" stop-color="#71411d"/></linearGradient><filter id="cpuShadow"><feGaussianBlur stdDeviation="4"/></filter></defs><ellipse cx="120" cy="178" rx="80" ry="18" fill="#ff9e2f" opacity=".25" filter="url(#cpuShadow)"/><g stroke="url(#cpuGold)" stroke-width="5" stroke-linecap="round"><path d="M48 66H25M48 85H20M48 104H14M48 123H12M48 142H20M48 161H28M192 66h23M192 85h28M192 104h34M192 123h36M192 142h30M192 161h22M66 48V25M85 48V18M104 48V12M123 48V10M142 48V17M161 48V25M66 192v23M85 192v28M104 192v32M123 192v36M142 192v29M161 192v22"/></g><path d="M48 67L120 28 192 67 192 160 120 204 48 160Z" fill="#3b2518" stroke="url(#cpuGold)" stroke-width="4"/><path d="M60 73L120 41 180 73 180 153 120 188 60 153Z" fill="url(#cpuGold)" stroke="#ffe7a1" stroke-width="2"/><path d="M75 81L120 57 165 81 165 145 120 169 75 145Z" fill="url(#cpuTop)" stroke="#5d3517" stroke-width="3"/><path d="M87 88L120 71 153 88 153 138 120 155 87 138Z" fill="#292c30" stroke="#ffe0a0" stroke-width="2"/><path d="M99 98h42v30H99z" fill="#111820" stroke="#f2b94e" stroke-width="1.5"/><text x="120" y="117" fill="#ffd980" font-size="8" font-family="monospace" text-anchor="middle" letter-spacing="1">CORE</text><text x="120" y="127" fill="#fff0c7" font-size="6" font-family="monospace" text-anchor="middle">LL-01</text></svg><span class="cpu-label">THE COMPUTING CORE</span></div>
+      <div class="cpu-glow"></div><svg class="cpu-photo-chip" viewBox="0 0 260 260" role="img" aria-label="Glowing square processor on a neon circuit board">
+<defs>
+ <linearGradient id="silicon" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#536080"/><stop offset=".5" stop-color="#222b48"/><stop offset="1" stop-color="#111a32"/></linearGradient>
+ <linearGradient id="chipEdge" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffb0ec"/><stop offset=".45" stop-color="#f13fb7"/><stop offset="1" stop-color="#39caff"/></linearGradient>
+ <linearGradient id="chipFace" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#747c9f"/><stop offset="1" stop-color="#3a4569"/></linearGradient>
+ <filter id="neonGlow" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="7" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<g fill="none" stroke-linecap="round" stroke-width="1.7" opacity=".9">
+ <g stroke="#38dcff"><path d="M7 57H54L78 79M10 76H43L66 98M9 108H48L63 123M15 151H54L74 133M25 177H57L81 153M32 202H68L91 174M206 75H234V50M207 93H247V78M211 116H253M206 146H248V166M198 170H232L248 187M180 197H216V220M70 13V47L87 63M96 8V39L108 51M166 9V43L178 56M191 17V51L204 65M85 214V242M110 216V252M148 216V252M173 208V244" /></g>
+ <g stroke="#ff4dc4"><path d="M8 89H38L58 109M10 132H35L58 154M35 232L72 195M226 30L204 51M254 98L227 119M252 143L222 163M235 206L207 181M130 5V36M146 9V37M52 18L76 43M220 233L194 207"/></g>
+ <g stroke="#c2faff" opacity=".65"><path d="M19 46H45M17 161H37M222 60H244M227 177H249M73 238H92M163 237H183"/></g>
+</g>
+<g class="cpu-pins" stroke="url(#chipEdge)" stroke-width="3" stroke-linecap="round" filter="url(#neonGlow)">
+ <path d="M76 64L61 49M92 55L78 39M109 47L98 29M127 42V20M146 45L157 26M164 51L180 35M182 61L201 49M195 76L216 68M202 94L224 91M205 112H230M202 132L225 138M195 151L215 164M183 168L199 186M166 181L178 202M147 188L153 212M127 192V218M108 188L101 211M89 180L78 199M72 167L54 183M60 150L39 160M53 132H29M51 113L28 108M56 94L35 84"/>
+</g>
+<g class="cpu-heartbeat">
+ <path d="M67 72L128 39 192 76 192 145 130 183 67 146Z" fill="#f43db8" opacity=".5" filter="url(#neonGlow)"/>
+ <path d="M63 69L128 31 197 71 197 150 130 190 63 151Z" fill="#131c35" stroke="url(#chipEdge)" stroke-width="4"/>
+ <path d="M72 73L128 41 188 76 188 144 130 178 72 144Z" fill="url(#silicon)" stroke="#a7e9ff" stroke-width="1.4"/>
+ <path d="M84 78L128 53 177 81 177 138 130 165 84 138Z" fill="url(#chipFace)" stroke="#ff83df" stroke-width="2"/>
+ <path d="M96 84L128 66 165 87 165 132 130 153 96 133Z" fill="#202943" stroke="#63dfff" stroke-width="1.5"/>
+ <path d="M108 92L128 80 153 94 153 125 130 139 108 126Z" fill="#0c1428" stroke="#ff9fe6" stroke-width="1.4"/>
+ <path d="M115 98L130 90 145 99 145 120 130 129 115 120Z" fill="#737d9f" stroke="#eafcff" stroke-width="1"/>
+</g>
+<ellipse class="cpu-pulse-ring" cx="130" cy="126" rx="91" ry="104" fill="none" stroke="#54dfff" stroke-width="1" opacity=".55" transform="rotate(-27 130 126)"/>
+</svg><span class="cpu-label">THE COMPUTING CORE</span></div>
     <button class="planet planet-boot" data-world="boot" aria-label="Explore Boot and Firmware"><span class="planet-body"></span><span class="planet-label">BOOT &amp; FIRMWARE</span></button>
     <button class="planet planet-arch" data-world="arch" aria-label="Explore Processor Architecture"><span class="planet-body"></span><span class="planet-label">PROCESSOR ARCHITECTURE</span></button>
     <button class="planet planet-os" data-world="os" aria-label="Explore Operating Systems"><span class="planet-body"></span><span class="planet-label">OPERATING SYSTEMS</span></button>
