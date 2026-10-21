@@ -1,0 +1,61 @@
+/* LowLevel Labs — interactive CPU solar system homepage */
+.solar-hero{position:relative;isolation:isolate;overflow:hidden;min-height:calc(100svh - 76px);padding:34px max(24px,calc((100vw - 1320px)/2)) 22px;background:radial-gradient(ellipse at 51% 48%,#17264a 0,#091226 34%,#040812 73%,#02040a 100%);color:#edf4ff}
+.solar-hero:before,.solar-hero:after{content:"";position:absolute;inset:0;pointer-events:none;z-index:-1}
+.solar-hero:before{opacity:.48;background-image:radial-gradient(1px 1px at 10% 22%,#fff 50%,transparent 100%),radial-gradient(1px 1px at 31% 70%,#9ecfff 50%,transparent 100%),radial-gradient(1px 1px at 72% 16%,#fff 50%,transparent 100%),radial-gradient(1px 1px at 86% 62%,#8ab5ff 50%,transparent 100%),radial-gradient(1px 1px at 44% 35%,#fff 50%,transparent 100%),radial-gradient(2px 2px at 63% 84%,#fff 50%,transparent 100%);background-size:260px 210px,310px 260px,390px 290px,270px 240px,330px 230px,410px 350px}
+.solar-hero:after{background:radial-gradient(ellipse at 51% 48%,transparent 0,transparent 33%,#02040a 85%);opacity:.7}
+.solar-starfield{position:absolute;inset:0;z-index:-1;background:linear-gradient(120deg,transparent 18%,#10244b25 45%,transparent 72%),radial-gradient(ellipse at 50% 53%,#ff9b2a12,transparent 26%)}
+.solar-intro{position:absolute;z-index:4;top:44px;left:max(26px,calc((100vw - 1320px)/2));width:270px}
+.solar-eyebrow{font-size:9px;letter-spacing:2px;color:#7fa7db;font-weight:800;display:flex;align-items:center;gap:9px}.solar-eyebrow span{width:20px;height:2px;background:#ff7b35;display:inline-block}
+.solar-intro h1{font-size:clamp(30px,3.2vw,44px);line-height:1.05;letter-spacing:-1.8px;margin:18px 0 12px;font-weight:800}.solar-intro h1 em{font-style:normal;color:#ff9a45}.solar-intro p{max-width:245px;color:#a6b6ce;font-size:12px;line-height:1.8;margin:0}
+.solar-hint{margin-top:20px;font-size:8px;letter-spacing:1.5px;color:#7993b7;font-weight:800;display:flex;align-items:center;gap:8px}.hint-pulse{width:6px;height:6px;border-radius:50%;background:#ff8639;box-shadow:0 0 13px #ff8639;animation:solarPulse 1.8s ease-in-out infinite}
+.solar-stage{position:relative;width:min(100%,1040px);height:clamp(550px,68vw,720px);margin:0 auto;isolation:isolate;transition:transform .8s cubic-bezier(.2,.8,.2,1)}
+.orbit{position:absolute;left:50%;top:51%;border:1px solid #4b9bff45;border-radius:50%;transform:translate(-50%,-50%) rotate(-8deg);pointer-events:none}
+.orbit-one{width:260px;height:150px;border-color:#ffb14e75;box-shadow:0 0 20px #ff982522}
+.orbit-two{width:370px;height:220px;border-color:#ffbe5b62}
+.orbit-three{width:490px;height:300px}
+.orbit-four{width:620px;height:380px;border-color:#48a8ff55}
+.orbit-five{width:760px;height:465px}
+.orbit-six{width:900px;height:550px;border-color:#49a8ff60}
+.orbit-seven{width:1040px;height:625px;border-color:#ffb65a65}
+.orbit-eight{width:1160px;height:690px;border-color:#317cde65}
+.cpu-sun{position:absolute;left:50%;top:51%;width:196px;height:196px;transform:translate(-50%,-50%);display:grid;place-items:center;z-index:3;filter:drop-shadow(0 0 26px #ff9b2c42)}
+.cpu-sun svg{width:100%;height:100%;position:relative;z-index:2;animation:cpuFloat 7s ease-in-out infinite}
+.cpu-glow{position:absolute;inset:10%;border-radius:50%;background:#ff9a2b40;filter:blur(26px);animation:solarPulse 3.8s ease-in-out infinite}
+.cpu-label{position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:8px;letter-spacing:2px;font-weight:800;color:#ffd18b;text-shadow:0 0 10px #ff9c35}
+.planet{--planet:#54bfff;--planet2:#155c9c;position:absolute;z-index:4;width:112px;height:112px;border:0;padding:0;background:transparent;color:#fff;cursor:pointer;display:grid;place-items:center;transition:transform .35s ease,filter .35s ease;filter:drop-shadow(0 0 13px color-mix(in srgb,var(--planet) 45%,transparent))}
+.planet-body{width:76px;height:76px;border-radius:50%;display:block;position:relative;overflow:hidden;border:1px solid color-mix(in srgb,var(--planet) 90%,white);background:radial-gradient(circle at 29% 23%,#fff 0 1%,color-mix(in srgb,var(--planet) 88%,white) 4%,var(--planet) 23%,var(--planet2) 68%,#020817 100%);box-shadow:inset -13px -8px 18px #0009,inset 7px 5px 14px #ffffff66,0 0 25px color-mix(in srgb,var(--planet) 42%,transparent)}
+.planet-body:before{content:"";position:absolute;inset:-15%;border-radius:50%;background:repeating-linear-gradient(12deg,transparent 0 9px,#ffffff17 10px 12px,transparent 13px 19px);transform:rotate(-24deg)}
+.planet-body:after{content:"";position:absolute;inset:20% -30%;height:22%;border:1px solid color-mix(in srgb,var(--planet) 80%,white);border-radius:50%;transform:rotate(-24deg);box-shadow:0 0 9px color-mix(in srgb,var(--planet) 70%,transparent)}
+.planet-label{position:absolute;top:calc(100% + 1px);left:50%;transform:translateX(-50%);width:170px;text-align:center;font-size:9px;letter-spacing:.7px;font-weight:850;color:#e6efff;text-shadow:0 2px 10px #000;white-space:nowrap}
+.planet:hover,.planet:focus-visible{transform:scale(1.12);outline:none;filter:drop-shadow(0 0 23px var(--planet))}
+.planet:focus-visible .planet-body{outline:2px solid white;outline-offset:5px}
+.planet.is-active{transform:scale(1.28);z-index:8;filter:drop-shadow(0 0 28px var(--planet))}
+.planet-boot{--planet:#65bfff;--planet2:#103d99;left:17%;top:24%}
+.planet-arch{--planet:#ffb454;--planet2:#843b0c;left:45%;top:5%}
+.planet-os{--planet:#68f2a2;--planet2:#07583f;left:73%;top:23%}
+.planet-drivers{--planet:#70b7ff;--planet2:#113f9c;left:83%;top:51%}
+.planet-memory{--planet:#50e6dc;--planet2:#096a7b;left:45%;top:78%}
+.planet-multi{--planet:#ffbd5c;--planet2:#86430f;left:69%;top:69%}
+.planet-io{--planet:#d48cff;--planet2:#53217f;left:7%;top:48%}
+.planet-debug{--planet:#ff795c;--planet2:#841f21;left:23%;top:69%}
+.solar-article-panel{position:absolute;z-index:10;top:50%;left:50%;transform:translate(-50%,-50%);width:min(380px,calc(100% - 26px));padding:25px 24px 22px;border:1px solid #77a9ed70;border-radius:16px;background:linear-gradient(145deg,#0c1930f5,#050a15f7);box-shadow:0 24px 90px #000b,0 0 35px #399aff18;backdrop-filter:blur(16px);animation:panelRise .3s ease both}
+.solar-article-panel[hidden]{display:none}
+.panel-close{position:absolute;right:13px;top:10px;border:1px solid #7790b54f;background:#101d31;color:#cfe1ff;width:29px;height:29px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer}
+.panel-kicker{font-size:8px;letter-spacing:2px;font-weight:850;color:#ff9b4a}.solar-article-panel h2{font-size:23px;letter-spacing:-.7px;margin:9px 30px 7px;color:#fff}.solar-article-panel>p{font-size:11px;line-height:1.65;color:#a8bad4;margin:0 0 16px}
+.panel-articles{display:grid;gap:7px}.panel-article{display:flex;align-items:center;gap:10px;padding:10px 11px;border:1px solid #7d9fc326;border-radius:8px;background:#ffffff05;color:#dce8fa;font-size:11px;line-height:1.4;transition:background .2s,border-color .2s}.panel-article:before{content:"";width:6px;height:6px;border:1px solid #ff9946;border-radius:50%;flex:none}.panel-article:hover{background:#1b2b45;border-color:#ff99464a;color:#fff}.panel-all{display:inline-block;margin-top:16px;font-size:10px;font-weight:800;color:#ff9a48}
+.solar-bottom{position:relative;z-index:2;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:24px;max-width:1320px;margin:-4px auto 0}
+.solar-stats{display:flex;align-items:center;gap:20px}.solar-stats>div{display:flex;flex-direction:column;gap:5px}.solar-stats strong{font-size:17px;letter-spacing:-.3px;color:#f1f6ff}.solar-stats span{font-size:9px;color:#90a5c4}.solar-stats i{height:34px;width:1px;background:#6c8ab332}
+.solar-scroll{display:flex;align-items:center;flex-direction:column;gap:5px;font-size:8px;letter-spacing:1.6px;color:#8fa6c8;white-space:nowrap}.solar-scroll span{font-size:26px;line-height:1;color:#e7f0ff;animation:scrollBob 1.6s ease-in-out infinite}
+.solar-quote{justify-self:end;display:flex;align-items:flex-start;gap:12px;padding:15px 18px;border:1px solid #7897c32b;border-radius:12px;background:#0308138c}.solar-quote b{font-size:32px;line-height:.9;color:#ff893d}.solar-quote p{margin:0;color:#aabbd3;font-size:10px;line-height:1.9}
+@keyframes solarPulse{0%,100%{opacity:.55;transform:scale(.96)}50%{opacity:1;transform:scale(1.05)}}
+@keyframes cpuFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes scrollBob{0%,100%{transform:translateY(0)}50%{transform:translateY(5px)}}
+@keyframes panelRise{from{opacity:0;translate:0 9px}to{opacity:1;translate:0 0}}
+.solar-hero.world-open .solar-stage{transform:scale(1.015)}
+.solar-hero.world-open .planet:not(.is-active){opacity:.38;filter:saturate(.5)}
+.solar-hero.world-open .cpu-sun{opacity:.65}
+@media(min-width:1500px){.solar-stage{width:1120px;height:730px}.solar-intro{left:max(36px,calc((100vw - 1420px)/2))}}
+@media(max-width:1100px){.solar-hero{padding-inline:18px}.solar-intro{position:relative;top:auto;left:auto;width:min(100%,720px);margin:0 auto 8px}.solar-intro h1{font-size:34px}.solar-intro p{max-width:520px}.solar-hint{margin-top:10px}.solar-stage{height:620px;transform:scale(.87);transform-origin:top center;width:115%;margin-left:-7.5%;margin-bottom:-70px}.solar-bottom{margin-top:0;grid-template-columns:1fr auto}.solar-quote{display:none}}
+@media(max-width:650px){.solar-hero{min-height:auto;padding:25px 12px 28px}.solar-intro{padding-inline:8px;margin-bottom:0}.solar-intro h1{font-size:32px}.solar-intro p{font-size:11px}.solar-stage{height:470px;width:720px;max-width:none;left:50%;margin-left:-360px;transform:scale(.57);transform-origin:top center;margin-bottom:-200px}.solar-hero.world-open .solar-stage{transform:scale(.57)}.solar-hero.world-open .planet:not(.is-active){opacity:.18}.solar-article-panel{position:fixed;top:auto;bottom:18px;left:12px;right:12px;transform:none;width:auto;max-height:72svh;overflow:auto;padding:22px 18px 18px}.solar-bottom{grid-template-columns:1fr;gap:18px;padding:0 10px}.solar-stats{justify-content:center;gap:13px}.solar-stats strong{font-size:14px}.solar-stats span{font-size:8px}.solar-stats i{height:28px}.solar-stats>div:last-child{display:none}.solar-scroll{margin-top:4px}}
+@media(max-width:380px){.solar-stage{transform:scale(.49);margin-bottom:-240px}.solar-hero.world-open .solar-stage{transform:scale(.49)}.solar-stats{gap:9px}}
+@media(prefers-reduced-motion:reduce){.solar-hero *, .solar-hero *:before,.solar-hero *:after{animation:none!important;transition:none!important}}
