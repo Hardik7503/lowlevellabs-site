@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Understand the differences between legacy BIOS and UEFI firmware, boot flow, partitioning, Secure Boot, and practical system implications.">
+<title>BIOS vs UEFI: What’s the Difference? — LowLevel Labs</title>
+<link rel="stylesheet" href="../styles.css"><link rel="icon" href="../assets/favicon.svg">
+</head>
+<body>
+<header class="site-header"><div class="container nav-wrap"><a class="brand" href="../"><span class="brand-mark"><span></span><span></span><span></span><span></span></span><span>LowLevel<span class="brand-accent">Labs</span><small>HARDWARE TO SOFTWARE</small></span></a><nav class="nav-links"><a href="../#articles">Articles</a><a href="../#topics">Topics</a><a href="../#about">About</a></nav></div></header>
+<main class="container section article-page">
+<a class="read-link" href="../#articles">← Back to articles</a>
+<div class="eyebrow" style="margin-top:28px">FIRMWARE · BOOT PROCESS</div>
+<h1 style="font-size:clamp(36px,5vw,58px);max-width:900px">BIOS vs. UEFI: What’s the Difference?</h1>
+<p class="hero-copy">Both initialize the platform and start the boot process, but UEFI provides a more modern firmware interface and boot architecture.</p>
+<div class="article-content">
+<h2>First, what are they?</h2>
+<p><strong>BIOS</strong> (Basic Input/Output System) is the traditional PC firmware interface used to initialize hardware and begin loading an operating system. In everyday usage, “BIOS” often means the firmware setup screen, even on modern systems.</p>
+<p><strong>UEFI</strong> (Unified Extensible Firmware Interface) is the modern firmware interface that replaced the legacy PC BIOS boot model on most contemporary computers. UEFI defines services and data structures that firmware and a bootloader or operating system can use before the OS takes over.</p>
+<h2>BIOS vs UEFI at a glance</h2>
+<table><thead><tr><th>Feature</th><th>Legacy BIOS</th><th>UEFI</th></tr></thead><tbody>
+<tr><td>Boot model</td><td>Runs legacy boot code from a boot sector</td><td>Can launch EFI applications, commonly a boot manager or OS bootloader</td></tr>
+<tr><td>Partitioning commonly used</td><td>Usually MBR</td><td>Usually GPT; UEFI can support other arrangements depending on implementation</td></tr>
+<tr><td>Disk-size implications</td><td>Traditional MBR layouts have practical limits, including about 2 TiB with 512-byte sectors</td><td>GPT supports much larger disks and more partitions</td></tr>
+<tr><td>Pre-boot environment</td><td>Traditional 16-bit real-mode interface and services</td><td>Defined firmware services with processor-mode and architecture support suited to the platform</td></tr>
+<tr><td>Boot files</td><td>Boot code is typically loaded from a disk boot sector</td><td>Boot applications are stored as files, usually on a FAT-formatted EFI System Partition (ESP)</td></tr>
+<tr><td>Security</td><td>No standard Secure Boot mechanism in the legacy BIOS model</td><td>Can support Secure Boot to verify trusted boot components</td></tr>
+<tr><td>Extensibility</td><td>More constrained legacy interface</td><td>Standardized services, drivers, boot manager, and runtime services</td></tr>
+</tbody></table>
+<p><em>Note:</em> These are typical configurations, not absolute rules. Firmware vendors and compatibility modes can change the details. UEFI does not automatically mean faster boot, and Secure Boot is an optional feature that must be supported and configured.</p>
+<h2>How the boot flow differs</h2>
+<h3>Typical legacy BIOS boot</h3>
+<ol><li>The CPU begins execution at the platform's reset vector and enters firmware initialization.</li><li>Firmware performs platform initialization and POST-style checks.</li><li>Firmware selects a boot device and loads code from its boot sector.</li><li>The boot code loads the next-stage bootloader, which eventually loads the operating system kernel.</li></ol>
+<h3>Typical UEFI boot</h3>
+<ol><li>The CPU begins at the platform reset vector and firmware initializes the platform.</li><li>UEFI firmware discovers boot options and available devices.</li><li>The firmware's boot manager launches a selected EFI executable, often from the EFI System Partition.</li><li>The bootloader loads the kernel and supporting data, then transfers control to the operating system.</li></ol>
+<p>Both paths ultimately hand control to an operating-system loader or kernel. The main difference is the firmware-to-bootloader interface and how boot components are located and launched.</p>
+<h2>What is the EFI System Partition?</h2>
+<p>The <strong>EFI System Partition (ESP)</strong> is a special partition, typically formatted as FAT, that stores UEFI boot applications and related files. A boot entry can point to a particular EFI executable on this partition. For example, a Linux installation may store a GRUB EFI executable there, while Windows typically uses Windows Boot Manager.</p>
+<h2>Where does Secure Boot fit?</h2>
+<p>Secure Boot is a UEFI feature that helps verify signatures of boot components against firmware-managed trust databases before launching them. It can help prevent unauthorized boot code from running, but it is not the same as full-disk encryption and it does not guarantee that an entire system is secure. Its behavior depends on firmware configuration, keys, and the operating system's boot chain.</p>
+<h2>Can a UEFI system still boot in legacy mode?</h2>
+<p>Some UEFI implementations include a Compatibility Support Module (CSM), which can provide a legacy BIOS-style boot path. When enabled, this may allow older operating systems or boot media to start using legacy methods. Many newer systems omit CSM, so check the platform's firmware settings and documentation rather than assuming it is available.</p>
+<h2>How to check which mode your system used</h2>
+<ul><li><strong>Linux:</strong> If <code>/sys/firmware/efi</code> exists after boot, Linux was booted through UEFI. If it is absent, the system may have booted in legacy mode.</li><li><strong>Windows:</strong> Open System Information (<code>msinfo32</code>) and check the <em>BIOS Mode</em> field, which commonly reports UEFI or Legacy.</li></ul>
+<h2>Which should you choose?</h2>
+<p>For a new PC or modern embedded platform that supports UEFI, UEFI is generally the preferred approach because it offers a standardized boot manager, file-based boot applications, GPT compatibility, and optional Secure Boot. Legacy BIOS remains relevant when supporting older systems, operating systems, or boot media.</p>
+<p>For embedded developers, remember that the exact boot architecture depends on the SoC and board. Many embedded boards use other firmware stages or boot ROM flows—for example, Boot ROM → SPL/TF-A/U-Boot → Linux—rather than a PC-style BIOS. UEFI can also be used in embedded and server platforms, but it is not universal.</p>
+<h2>Key takeaway</h2>
+<p>Legacy BIOS boots through a traditional boot-sector model; UEFI provides a more extensible firmware interface that commonly launches EFI boot applications from an EFI System Partition. Both are firmware-stage parts of the boot chain, and neither is the operating system itself.</p>
+</div></main>
+<footer class="site-footer"><div class="container footer-inner"><a class="brand footer-brand" href="../"><span class="brand-mark"><span></span><span></span><span></span><span></span></span><span>LowLevel<span class="brand-accent">Labs</span><small>HARDWARE TO SOFTWARE</small></span></a><p>Understand systems from hardware to software.</p><div class="footer-links"><a href="../#articles">Articles</a><a href="../#about">About</a></div><small class="copyright">© LowLevel Labs</small></div></footer>
+</body></html>
