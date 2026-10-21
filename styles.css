@@ -2,3 +2,30 @@
 @media(max-width:850px){.hero{grid-template-columns:1fr 1fr;gap:10px}.hero h1{font-size:42px}.article-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.project-inner{gap:25px}.nav-links{gap:17px}}
 @media(max-width:650px){.container{width:calc(100% - 32px)}.site-header{height:65px}.menu-toggle{display:block}.nav-links{display:none;position:absolute;top:64px;left:0;right:0;padding:18px 22px 22px;background:#fff;border-bottom:1px solid var(--line);flex-direction:column;align-items:stretch;gap:17px}.nav-links.open{display:flex}.nav-links a.current:after{display:none}.hero{grid-template-columns:1fr;padding-block:28px 18px;gap:0}.hero-copy-block{padding:15px 0}.hero h1{font-size:clamp(36px,10vw,49px);letter-spacing:-1.8px}.hero-visual{min-height:210px;margin-top:-5px}.hero-visual svg{width:95%;max-height:245px}.topic-strip-grid{grid-template-columns:repeat(2,1fr);row-gap:18px;padding-block:20px}.topic-mini:nth-child(2){border-right:0}.section{padding-block:40px 52px}.section-heading{align-items:center}.section-heading h2{font-size:26px}.article-grid{grid-template-columns:1fr;gap:14px}.article-visual{height:190px}.article-body{padding:16px}.article-body h3{font-size:18px}.project-inner{grid-template-columns:1fr;padding-block:40px;gap:25px}.project-inner h2{font-size:31px}.project-diagram{padding:4px}.about-inner{grid-template-columns:1fr;gap:18px;padding-block:40px}.about-symbol{width:75px;height:75px}.about-symbol span{font-size:24px}.footer-inner{grid-template-columns:1fr;gap:12px}.footer-inner>p,.footer-links,.copyright{grid-column:1;justify-self:start}.copyright{grid-row:auto}.article-page{padding-block:30px 55px}.article-page h1{font-size:35px!important}.article-page .hero-copy{font-size:14px}.article-content{font-size:14px}.article-content h2{font-size:22px}.article-content table{font-size:11px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  color: #233a70;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.brand-accent {
+  color: #233a70;
+}
+
+.brand-text small {
+  margin-top: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: #555;
+}
