@@ -22,4 +22,22 @@
   document.querySelectorAll('.nav-links a[href="#topics"],.footer-links a[href="#topics"]').forEach(a=>a.setAttribute("href","#solar-system"));
   const search=document.querySelector("#solarSearch");
   search?.addEventListener("input",()=>{const q=search.value.trim().toLowerCase();if(!q){close();return}const found=Object.entries(worlds).find(([,w])=>w.title.toLowerCase().includes(q)||w.articles.some(([n])=>n.toLowerCase().includes(q)));if(found)open(found[0]);});
+
+  // Scroll progress gently zooms the solar system in, then out as the visitor moves past it.
+  let scrollFrame=0;
+  function updateScrollZoom(){
+    scrollFrame=0;
+    const rect=hero.getBoundingClientRect();
+    const vh=window.innerHeight||800;
+    const progress=Math.max(0,Math.min(1,(vh-rect.top)/(vh+rect.height)));
+    const zoom=1+0.2*Math.sin(progress*Math.PI);
+    hero.style.setProperty("--scroll-zoom",zoom.toFixed(3));
+    const stage=document.querySelector("#solarStage");
+    if(stage)stage.style.setProperty("--scroll-zoom",zoom.toFixed(3));
+  }
+  function requestScrollZoom(){if(!scrollFrame)scrollFrame=requestAnimationFrame(updateScrollZoom);}
+  window.addEventListener("scroll",requestScrollZoom,{passive:true});
+  window.addEventListener("resize",requestScrollZoom);
+  updateScrollZoom();
+
 })();
