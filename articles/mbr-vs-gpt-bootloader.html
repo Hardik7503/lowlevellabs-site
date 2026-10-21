@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Understand MBR and GPT partitioning, and how BIOS and UEFI firmware find and start a bootloader.">
+  <title>MBR vs. GPT: How Bootloaders Start — LowLevel Labs</title>
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<header class="site-header"><div class="container nav-wrap">
+  <a class="brand" href="../"><span class="brand-mark"><span></span><span></span><span></span><span></span></span><span>LowLevel<span class="brand-accent">Labs</span><small>HARDWARE TO SOFTWARE</small></span></a>
+  <nav class="nav-links" aria-label="Main navigation"><a href="../#articles">Articles</a><a href="../#topics">Topics</a><a href="../#about">About</a></nav>
+</div></header>
+<main class="container section article-page">
+  <a class="read-link" href="../#articles">← Back to articles</a>
+  <div class="eyebrow" style="margin-top:28px">BOOT &amp; FIRMWARE · PRACTICAL GUIDE</div>
+  <h1 style="font-size:clamp(36px,5vw,58px);max-width:900px">MBR vs. GPT: How Does a Bootloader Get Started?</h1>
+  <p class="hero-copy">MBR and GPT describe how a disk is partitioned. BIOS and UEFI describe firmware interfaces. Understanding how these pieces fit together makes the boot path much easier to debug.</p>
+  <div class="article-content">
+    <h2>First, separate the concepts</h2>
+    <p><strong>MBR (Master Boot Record)</strong> and <strong>GPT (GUID Partition Table)</strong> are disk-partitioning formats. They describe partitions and, in the legacy MBR layout, reserve a small area for bootstrap code.</p>
+    <p><strong>BIOS</strong> and <strong>UEFI</strong> are firmware environments. They initialize enough hardware to begin loading software. A <strong>bootloader</strong> is the software that then loads an operating system kernel or another boot stage.</p>
+    <p>These terms are related, but they are not interchangeable: GPT is not a bootloader, and MBR is not the same thing as BIOS.</p>
+
+    <h2>Legacy BIOS + MBR boot path</h2>
+    <ol>
+      <li>After reset, platform firmware performs early initialization and selects a boot device according to its boot order.</li>
+      <li>For a traditional BIOS boot from a hard disk, firmware reads the disk's first logical sector—commonly 512 bytes—into memory and transfers control to its bootstrap code if the sector is valid.</li>
+      <li>The MBR layout contains bootstrap code, a four-entry partition table, and the signature <code>0x55AA</code> at the end of the sector. With a conventional 512-byte sector, these occupy 446, 64, and 2 bytes respectively.</li>
+      <li>The initial code is very small. Depending on the bootloader, it may locate a later stage in a known disk area or find an active partition and chain-load its boot sector.</li>
+      <li>Later bootloader stages load the operating-system kernel and, on Linux, usually an initramfs/initrd when configured. Control then passes to the kernel.</li>
+    </ol>
+    <p>The exact stages vary by bootloader and operating system. Modern bootloaders often split their work across several stages because the MBR's initial code area is so limited.</p>
+
+    <h2>UEFI + GPT boot path</h2>
+    <ol>
+      <li>UEFI firmware initializes the platform and reads its boot configuration, commonly from NVRAM boot entries.</li>
+      <li>A boot entry identifies an EFI executable on a supported filesystem, usually on the EFI System Partition (ESP).</li>
+      <li>The ESP is commonly formatted as FAT32 and contains files such as a vendor boot manager, GRUB's EFI application, or a Windows Boot Manager executable.</li>
+      <li>UEFI loads and launches the selected EFI application. That bootloader can load the kernel and any required supporting files.</li>
+      <li>The bootloader transfers control to the operating system using the platform's supported hand-off procedure.</li>
+    </ol>
+    <p>GPT commonly accompanies UEFI installations, but the key distinction is the firmware's boot mode and the bootloader format. UEFI does not execute legacy MBR bootstrap code as its normal disk-boot mechanism.</p>
+
+    <h2>What is stored in GPT?</h2>
+    <p>GPT stores a protective MBR at the beginning of the disk for compatibility with older disk tools, followed by a GPT header and partition-entry array. It also keeps backup GPT metadata near the end of the disk.</p>
+    <ul>
+      <li><strong>Partition type GUIDs:</strong> identify the intended type of each partition, such as an EFI System Partition.</li>
+      <li><strong>Partition GUIDs:</strong> uniquely identify individual partitions.</li>
+      <li><strong>CRC checksums:</strong> help detect corruption in the GPT header and partition-entry array.</li>
+      <li><strong>Backup metadata:</strong> provides a secondary copy of the GPT structures, typically at the end of the disk.</li>
+    </ul>
+    <p>The protective MBR is not the UEFI bootloader. It mainly helps prevent MBR-only tools from treating a GPT disk as empty and overwriting its partitions.</p>
+
+    <h2>MBR vs. GPT at a glance</h2>
+    <table>
+      <thead><tr><th>Characteristic</th><th>MBR</th><th>GPT</th></tr></thead>
+      <tbody>
+        <tr><td>Partition metadata</td><td>Partition table in the first sector</td><td>Header and partition-entry array, with backup metadata</td></tr>
+        <tr><td>Partition count</td><td>Four primary entries; extended partitions can provide logical partitions</td><td>Many partitions; the supported count depends on the implementation</td></tr>
+        <tr><td>Disk size</td><td>Commonly limited to about 2 TiB with 512-byte logical sectors</td><td>Supports much larger disks; practical limits depend on implementation</td></tr>
+        <tr><td>Integrity</td><td>No equivalent checksums for the partition table</td><td>CRC checksums for GPT metadata</td></tr>
+        <tr><td>Typical boot pairing</td><td>Legacy BIOS boot often uses MBR</td><td>UEFI boot commonly uses GPT and an ESP</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Where does the bootloader live?</h2>
+    <p>With a classic BIOS/MBR installation, the first boot stage is often in the MBR and later stages may be stored elsewhere on disk. With UEFI, the firmware normally loads an EFI executable from the ESP; it does not need to execute a boot program from the MBR.</p>
+    <p>Linux distributions can use GRUB, systemd-boot, or another boot manager depending on the configuration. Windows uses Windows Boot Manager. The partition layout and firmware mode influence how the boot files are installed and discovered.</p>
+
+    <h2>Debugging checklist</h2>
+    <ul>
+      <li>Check whether the machine is booted in legacy BIOS/CSM mode or native UEFI mode.</li>
+      <li>Inspect the partition table with a suitable tool such as <code>fdisk -l</code> or <code>parted -l</code>.</li>
+      <li>For UEFI, confirm that the ESP exists, is readable, and contains the expected EFI executable.</li>
+      <li>Check firmware boot entries with <code>efibootmgr -v</code> when running Linux on a system booted through UEFI.</li>
+      <li>Verify that the installed bootloader matches the intended firmware mode; a valid kernel file alone does not guarantee a bootable system.</li>
+      <li>Back up important data before changing partition tables or boot configuration.</li>
+    </ul>
+
+    <h2>Key takeaway</h2>
+    <p>Think of the boot sequence as a chain: <strong>firmware → bootloader → kernel</strong>. MBR or GPT describes the disk's partition layout; BIOS or UEFI determines the firmware boot environment and how the first boot software is located and launched.</p>
+    <p class="content-note">This guide describes common PC boot paths. Firmware implementations, bootloaders, storage devices, and operating-system installation choices can differ.</p>
+  </div>
+</main>
+<footer class="site-footer"><div class="container footer-inner">
+  <a class="brand footer-brand" href="../"><span class="brand-mark"><span></span><span></span><span></span><span></span></span><span>LowLevel<span class="brand-accent">Labs</span><small>HARDWARE TO SOFTWARE</small></span></a>
+  <p>Understand systems from hardware to software.</p><div class="footer-links"><a href="../#articles">Articles</a><a href="../#about">About</a></div><small class="copyright">© LowLevel Labs</small>
+</div></footer>
+</body>
+</html>
