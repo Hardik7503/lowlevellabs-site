@@ -12,20 +12,23 @@
 .brand-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.1;
-  color: #233a70;
-  font-size: 22px;
-  font-weight: 700;
+  line-height: 1.05;
+  color: #1b2d69;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.7px;
 }
 
 .brand-accent {
-  color: #233a70;
+  color: inherit;
 }
 
 .brand-text small {
-  margin-top: 4px;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 1.5px;
-  color: #555;
+  display: block;
+  margin-top: 5px;
+  font-size: 8px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 1.35px;
+  color: #6c7073;
 }
