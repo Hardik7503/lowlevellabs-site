@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Follow a userspace file operation into a kernel driver's file_operations callbacks.">
+<title>From open() to read(): A Linux Character Device Walkthrough — LowLevel Labs</title>
+<link rel="stylesheet" href="../styles.css?v=20261021-brandfix"><link rel="icon" href="../assets/favicon.svg">
+</head>
+<body>
+<header class="site-header"><div class="container nav-wrap"><a class="brand" href="../" aria-label="LowLevel Labs home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a><nav class="nav-links"><a href="../#articles">Articles</a><a href="../#topics">Topics</a><a href="../#about">About</a></nav></div></header>
+<main class="container section article-page"><a class="read-link" href="../#articles">← Back to articles</a><div class="eyebrow" style="margin-top:28px">LINUX & DRIVERS · PRACTICAL GUIDE</div><h1 style="font-size:clamp(36px,5vw,58px);max-width:900px">From open() to read(): A Linux Character Device Walkthrough</h1><p class="hero-copy">A character device provides a familiar file interface to a kernel-managed device. Understanding the path from a userspace system call to a driver's callback makes the Linux driver model much easier to reason about.</p><div class="article-content"><h2>The path through the kernel</h2><p>A userspace application calls <code>open()</code>, <code>read()</code>, <code>write()</code>, or <code>ioctl()</code>. The VFS resolves the file and dispatches operations through the file's operations table. For a character device, the driver's callbacks implement the behavior exposed by that device node.</p><h2>What the callbacks mean</h2><ul><li><code>open()</code> prepares per-file state and can reject unsupported access.</li><li><code>read()</code> transfers data from kernel space to userspace.</li><li><code>write()</code> accepts data from userspace for the device.</li><li><code>unlocked_ioctl()</code> handles device-specific commands.</li><li><code>release()</code> cleans up state when the file is closed.</li></ul><h2>Copy data safely</h2><p>Kernel and userspace address spaces are distinct. Use <code>copy_to_user()</code> and <code>copy_from_user()</code> for transfers; do not dereference a userspace pointer directly. These helpers can fail partially, so callbacks must handle their return values correctly.</p><pre><code>static ssize_t demo_read(struct file *file,
+                         char __user *buf,
+                         size_t count, loff_t *ppos)
+{
+    char data[] = "hello from kernel\n";
+    size_t len = sizeof(data) - 1;
+
+    if (*ppos &gt;= len)
+        return 0;
+    if (count &gt; len - *ppos)
+        count = len - *ppos;
+    if (copy_to_user(buf, data + *ppos, count))
+        return -EFAULT;
+    *ppos += count;
+    return count;
+}</code></pre><p>This snippet illustrates file-offset handling, but a production driver needs a deliberate data model, synchronization, and registration/cleanup paths.</p><h2>Prefer the right abstraction</h2><p>Many devices belong to a subsystem such as input, IIO, networking, TTY, or hwmon. Use a custom character device only when it fits the device's purpose; a bespoke ioctl ABI creates a long-term compatibility responsibility.</p><h2>Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p></div></main>
+<footer class="site-footer"><div class="container footer-inner"><a class="brand footer-brand" href="../"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a><p>Understand systems from hardware to software.</p><div class="footer-links"><a href="../#articles">Articles</a><a href="../#about">About</a></div><small class="copyright">© LowLevel Labs</small></div></footer>
+</body></html>
