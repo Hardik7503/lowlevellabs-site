@@ -77,3 +77,31 @@
 @media(max-width:650px){.solar-hero .solar-stage{transform:scale(calc(.57 * var(--scroll-zoom,1)));}.solar-hero.world-open .solar-stage{transform:scale(calc(.57 * var(--scroll-zoom,1) * 1.015));}}
 @media(max-width:380px){.solar-hero .solar-stage{transform:scale(calc(.49 * var(--scroll-zoom,1)));}.solar-hero.world-open .solar-stage{transform:scale(calc(.49 * var(--scroll-zoom,1) * 1.015));}}
 @media(prefers-reduced-motion:reduce){.planet,.orbit{animation:none!important}}
+
+/* Cinematic animated processor + deep-space motion */
+.solar-hero{background:radial-gradient(ellipse at 50% 48%,#172343 0,#0a1124 39%,#050813 74%,#02040a 100%)}
+.solar-hero:before{opacity:.78;background-image:radial-gradient(1.2px 1.2px at 7% 12%,#fff 50%,transparent 100%),radial-gradient(1px 1px at 18% 72%,#7ee9ff 50%,transparent 100%),radial-gradient(1.4px 1.4px at 31% 28%,#fff 50%,transparent 100%),radial-gradient(1px 1px at 46% 87%,#ff9fe6 50%,transparent 100%),radial-gradient(1.5px 1.5px at 69% 18%,#fff 50%,transparent 100%),radial-gradient(1px 1px at 81% 57%,#91e9ff 50%,transparent 100%),radial-gradient(1.2px 1.2px at 93% 32%,#fff 50%,transparent 100%),radial-gradient(1px 1px at 57% 48%,#fff 50%,transparent 100%);background-size:173px 167px,233px 213px,291px 247px,337px 301px,203px 223px,277px 191px,319px 267px,229px 257px;animation:starDrift 35s linear infinite,starTwinkle 4s ease-in-out infinite alternate}
+.solar-hero:after{background:radial-gradient(ellipse at 50% 48%,#ff4eb51a 0,transparent 22%),radial-gradient(ellipse at 50% 48%,transparent 0,transparent 34%,#02040a 85%);opacity:.78}
+.solar-starfield{background:radial-gradient(ellipse at 47% 48%,#27dfff0b,transparent 36%),linear-gradient(115deg,transparent 18%,#153a7025 48%,#d8297212 72%,transparent 88%);animation:nebulaFlow 22s ease-in-out infinite alternate}
+.cpu-sun{width:244px;height:244px;filter:drop-shadow(0 0 20px #f63eb55c) drop-shadow(0 0 36px #2bdfff28)}
+.cpu-sun svg{overflow:visible;animation:cpuHeartbeat 2.15s ease-in-out infinite}
+.cpu-glow{inset:9%;background:radial-gradient(circle,#ff5fc65c 0,#2ad8ff25 45%,transparent 72%);filter:blur(28px);animation:cpuGlowBeat 2.15s ease-in-out infinite}
+.cpu-heartbeat{transform-origin:130px 126px;animation:chipHeart 2.15s ease-in-out infinite}
+.cpu-pulse-ring{transform-origin:130px 126px;animation:chipRing 2.15s ease-out infinite}
+.cpu-pins{animation:pinFlicker 3s ease-in-out infinite alternate}
+.planet{animation:planetDrift 7s ease-in-out infinite,planetShine 4s ease-in-out infinite alternate}
+.planet-boot{animation-delay:-1s,-.7s}.planet-arch{animation-delay:-3s,-1.6s}.planet-os{animation-delay:-4.5s,-2.5s}.planet-drivers{animation-delay:-2s,-1.2s}.planet-memory{animation-delay:-5.5s,-2.8s}.planet-multi{animation-delay:-2.7s,-1.9s}.planet-io{animation-delay:-4s,-.9s}.planet-debug{animation-delay:-.5s,-2.1s}
+.orbit{animation:orbitGlow 7s ease-in-out infinite,orbitRotation 90s linear infinite;transform-origin:center center}
+.orbit-two{animation-duration:8s,105s}.orbit-three{animation-duration:9s,120s}.orbit-four{animation-duration:7.5s,140s}.orbit-five{animation-duration:8.5s,160s}.orbit-six{animation-duration:9.5s,185s}.orbit-seven{animation-duration:8s,210s}.orbit-eight{animation-duration:10s,240s}
+@keyframes cpuHeartbeat{0%,100%{transform:scale(1)}8%{transform:scale(1.045)}17%{transform:scale(.995)}28%{transform:scale(1.025)}42%{transform:scale(1)}}
+@keyframes cpuGlowBeat{0%,100%{opacity:.65;transform:scale(.94)}8%{opacity:1;transform:scale(1.12)}17%{opacity:.72;transform:scale(.98)}28%{opacity:.95;transform:scale(1.08)}42%{opacity:.72;transform:scale(1)}}
+@keyframes chipHeart{0%,100%{filter:brightness(1)}8%{filter:brightness(1.3)}17%{filter:brightness(1)}28%{filter:brightness(1.18)}42%{filter:brightness(1)}}
+@keyframes chipRing{0%{opacity:.75;transform:scale(.82)}40%,100%{opacity:0;transform:scale(1.35)}}
+@keyframes pinFlicker{0%,100%{opacity:.78}35%{opacity:1}60%{opacity:.62}}
+@keyframes starDrift{from{background-position:0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0}to{background-position:173px 167px,-233px 213px,291px -247px,-337px -301px,203px 223px,-277px 191px,319px -267px,-229px 257px}}
+@keyframes starTwinkle{0%{filter:brightness(.65)}100%{filter:brightness(1.45)}}
+@keyframes nebulaFlow{0%{opacity:.45;transform:scale(1)}100%{opacity:.9;transform:scale(1.07)}}
+@keyframes orbitRotation{from{rotate:0deg}to{rotate:360deg}}
+@keyframes planetShine{0%{filter:brightness(.9) drop-shadow(0 0 10px color-mix(in srgb,var(--planet) 30%,transparent))}100%{filter:brightness(1.2) drop-shadow(0 0 20px color-mix(in srgb,var(--planet) 65%,transparent))}}
+@media(max-width:650px){.cpu-sun{width:210px;height:210px}}
+@media(prefers-reduced-motion:reduce){.solar-hero:before,.solar-starfield,.cpu-sun svg,.cpu-glow,.cpu-heartbeat,.cpu-pulse-ring,.cpu-pins,.planet,.orbit{animation:none!important}}
