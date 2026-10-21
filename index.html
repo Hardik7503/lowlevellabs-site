@@ -1,150 +1,54 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="LowLevel Labs explains embedded systems from hardware to software: Linux kernel, device drivers, firmware, computer architecture, and practical labs.">
-  <meta name="theme-color" content="#0b1020">
-  <title>LowLevel Labs — Understand Systems from Hardware to Software</title>
-  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css">
-  <script defer src="script.js"></script>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="LowLevel Labs — technical notes, practical experiments, and clear explanations for embedded systems, firmware, Linux, and processor architecture.">
+  <meta name="theme-color" content="#f7f7f4"><title>LowLevel Labs — Technical Notes on Embedded Systems</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css"><script defer src="script.js"></script>
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
-  <header class="site-header">
-    <div class="container nav-wrap">
-      <a class="brand" href="#" aria-label="LowLevel Labs home">
-        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-        <span>LowLevel<span class="brand-accent">Labs</span><small>HARDWARE TO SOFTWARE</small></span>
-      </a>
-      <button class="menu-toggle" id="menuToggle" aria-label="Open navigation" aria-expanded="false">☰</button>
-      <nav class="nav-links" id="navLinks" aria-label="Main navigation">
-        <a href="#articles">Articles</a>
-        <a href="#topics">Topics</a>
-        <a href="#labs">Practical Labs</a>
-        <a href="#about">About</a>
-        <a class="nav-cta" href="#newsletter">Explore the lab <span aria-hidden="true">↗</span></a>
-      </nav>
-    </div>
-  </header>
-
-  <main id="main">
-    <section class="hero">
-      <div class="hero-grid"></div>
-      <div class="container hero-content">
-        <div class="eyebrow"><span class="pulse"></span> A FIELD GUIDE TO LOW-LEVEL ENGINEERING</div>
-        <h1>Understand what happens <span>beneath the abstraction.</span></h1>
-        <p class="hero-copy">Practical notes and clear explanations on embedded systems, Linux internals, firmware, and computer architecture — from registers to runtime.</p>
-        <div class="hero-actions">
-          <a class="button button-primary" href="#articles">Explore articles <span aria-hidden="true">→</span></a>
-          <a class="button button-quiet" href="#about">About LowLevel Labs</a>
-        </div>
-        <div class="hero-stats">
-          <div><strong>01</strong><span>Understand the concept</span></div>
-          <div><strong>02</strong><span>Trace the execution</span></div>
-          <div><strong>03</strong><span>Test it in the lab</span></div>
-        </div>
-      </div>
-      <div class="hero-art" aria-hidden="true">
-        <div class="chip-frame">
-          <div class="chip-label">SYSTEM / 001</div>
-          <svg viewBox="0 0 360 360" role="img" aria-label="">
-            <defs><linearGradient id="chipGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#61e7d2"/><stop offset="1" stop-color="#6488ff"/></linearGradient></defs>
-            <g fill="none" stroke="#344362" stroke-width="2">
-              <path d="M180 18V70M180 290V342M18 180H70M290 180H342"/>
-              <path d="M80 52V90H110M280 52V90H250M80 308V270H110M280 308V270H250"/>
-              <path d="M22 110H58V130H88M338 110H302V130H272M22 250H58V230H88M338 250H302V230H272"/>
-              <path d="M110 18V52H130M250 18V52H230M110 342V308H130M250 342V308H230"/>
-            </g>
-            <g stroke="url(#chipGrad)" stroke-width="2" fill="none" opacity=".95">
-              <rect x="83" y="83" width="194" height="194" rx="18"/>
-              <rect x="105" y="105" width="150" height="150" rx="10"/>
-              <path d="M130 130H230V230H130Z M130 180H230 M180 130V230"/>
-              <path d="M146 83V66M180 83V60M214 83V66M146 277V294M180 277V300M214 277V294M83 146H66M83 180H60M83 214H66M277 146H294M277 180H300M277 214H294"/>
-            </g>
-            <g fill="#d8fff7" font-family="monospace" text-anchor="middle">
-              <text x="180" y="169" font-size="12">LOWLEVEL</text>
-              <text x="180" y="191" font-size="19" font-weight="700">LABS</text>
-              <text x="180" y="211" font-size="9" letter-spacing="2">SYSTEMS CORE</text>
-            </g>
-            <g fill="#61e7d2"><circle cx="180" cy="18" r="4"/><circle cx="342" cy="180" r="4"/><circle cx="18" cy="180" r="4"/><circle cx="180" cy="342" r="4"/></g>
-          </svg>
-          <div class="chip-foot"><span>CPU</span><span>MEMORY</span><span>IO</span><span>FIRMWARE</span></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="ticker" aria-label="Topics covered"><div class="ticker-track"><span>LINUX KERNEL</span><i>✳</i><span>DEVICE DRIVERS</span><i>✳</i><span>FIRMWARE</span><i>✳</i><span>COMPUTER ARCHITECTURE</span><i>✳</i><span>EMBEDDED LINUX</span><i>✳</i><span>LINUX KERNEL</span><i>✳</i><span>DEVICE DRIVERS</span><i>✳</i><span>FIRMWARE</span><i>✳</i></div></section>
-
-    <section class="section container" id="articles">
-      <div class="section-heading">
-        <div><div class="eyebrow">THE KNOWLEDGE BASE</div><h2>Explore the <span class="text-gradient">latest notes.</span></h2></div>
-        <p>Engineering concepts, explained clearly. Start with a topic or browse the whole collection.</p>
-      </div>
-      <div class="filters" role="group" aria-label="Filter articles">
-        <button class="filter-button active" data-filter="all">All articles</button>
-        <button class="filter-button" data-filter="linux">Linux & drivers</button>
-        <button class="filter-button" data-filter="firmware">Firmware</button>
-        <button class="filter-button" data-filter="architecture">Architecture</button>
-        <button class="filter-button" data-filter="lab">Practical labs</button>
-      </div>
-      <div class="article-grid" id="articleGrid">
-        <article class="article-card featured" data-category="linux">
-          <div class="article-visual visual-terminal"><span class="visual-tag">KERNEL NOTES / 001</span><div class="terminal-window"><div class="terminal-bar"><i></i><i></i><i></i><span>driver_probe.c</span></div><pre><b>static int</b> demo_probe(
-  <em>struct device</em> *dev)
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header"><div class="container nav-wrap">
+  <a class="brand" href="index.html" aria-label="LowLevel Labs home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-name">LowLevel Labs</span></a>
+  <button class="menu-toggle" id="menuToggle" aria-label="Open navigation" aria-expanded="false">☰</button>
+  <nav class="nav-links" id="navLinks" aria-label="Main navigation"><a href="index.html" class="current">Home</a><a href="#articles">Articles</a><a href="#projects">Projects</a><a href="#topics">Topics</a><a href="#about">About</a><a class="search-link" href="#articles" aria-label="Browse articles">⌕</a></nav>
+</div></header>
+<main id="main">
+<section class="hero container">
+  <div class="hero-copy-block"><div class="eyebrow"><span class="eyebrow-line"></span> TECHNICAL NOTES · REAL EXPERIMENTS</div>
+    <h1>Technical Notes on<br>Embedded Systems</h1>
+    <p class="hero-copy">Practical guides. Real experiments. Clear explanations.</p>
+    <div class="hero-actions"><a class="button button-primary" href="#articles">Browse Articles</a><a class="button button-secondary" href="#about">About Me</a></div>
+  </div>
+  <div class="hero-visual" aria-label="Illustration of an embedded development board">
+    <svg viewBox="0 0 480 340" role="img" aria-label="Embedded processor board illustration">
+      <defs><linearGradient id="pcb" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#dfe9e5"/><stop offset="1" stop-color="#b6cbc4"/></linearGradient><linearGradient id="chip" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3b4446"/><stop offset="1" stop-color="#171d20"/></linearGradient></defs>
+      <g transform="translate(40 36) rotate(-8 200 135)"><rect x="18" y="28" width="380" height="252" rx="18" fill="url(#pcb)" stroke="#829b92" stroke-width="2"/><path d="M42 90H128V112H168M42 210H118V180H164M274 55V90H330V120M276 260V224H350V198M368 80V110M48 150H110V165H150" fill="none" stroke="#76998b" stroke-width="4"/><path d="M70 48V78H104M64 248V222H105M358 238V216H328" fill="none" stroke="#eaf1ed" stroke-width="5"/>
+      <rect x="135" y="82" width="146" height="146" rx="8" fill="#657a75"/><rect x="144" y="91" width="128" height="128" rx="5" fill="url(#chip)" stroke="#a8b7b1" stroke-width="2"/><rect x="161" y="108" width="94" height="94" fill="#252e30" stroke="#6e817b"/><path d="M173 120H243V190H173Z M173 155H243 M208 120V190" fill="none" stroke="#7d9990" stroke-width="2"/><text x="208" y="149" font-family="monospace" font-size="9" fill="#e6eee9" text-anchor="middle">LL SYSTEMS</text><text x="208" y="166" font-family="monospace" font-size="13" fill="#e6eee9" font-weight="bold" text-anchor="middle">SoC</text>
+      <rect x="58" y="105" width="48" height="28" rx="3" fill="#d7dfdc" stroke="#829a91"/><rect x="308" y="136" width="52" height="62" rx="4" fill="#5a6965"/><rect x="316" y="144" width="36" height="46" fill="#293332"/><g fill="#a6b8b1"><rect x="151" y="70" width="8" height="12"/><rect x="169" y="70" width="8" height="12"/><rect x="187" y="70" width="8" height="12"/><rect x="205" y="70" width="8" height="12"/><rect x="223" y="70" width="8" height="12"/><rect x="241" y="70" width="8" height="12"/><rect x="151" y="228" width="8" height="12"/><rect x="169" y="228" width="8" height="12"/><rect x="187" y="228" width="8" height="12"/><rect x="205" y="228" width="8" height="12"/><rect x="223" y="228" width="8" height="12"/><rect x="241" y="228" width="8" height="12"/></g>
+      <g fill="#7e958c"><circle cx="42" cy="52" r="5"/><circle cx="372" cy="52" r="5"/><circle cx="42" cy="254" r="5"/><circle cx="372" cy="254" r="5"/></g><g fill="#d8e3de" stroke="#81968d"><rect x="30" y="140" width="25" height="54" rx="4"/><rect x="358" y="94" width="25" height="30" rx="4"/><rect x="290" y="238" width="58" height="20" rx="3"/></g></g>
+    </svg>
+    <span class="visual-caption">HARDWARE · FIRMWARE · SYSTEMS</span>
+  </div>
+</section>
+<section class="topic-strip" id="topics"><div class="container topic-strip-grid">
+  <a class="topic-mini" href="#articles"><span class="topic-icon">⌘</span><strong>Embedded Linux</strong></a><a class="topic-mini" href="#articles"><span class="topic-icon">▣</span><strong>Boot &amp; Firmware</strong></a><a class="topic-mini" href="#articles"><span class="topic-icon">◉</span><strong>Device Drivers</strong></a><a class="topic-mini" href="#articles"><span class="topic-icon">⌘</span><strong>Processor Architecture</strong></a>
+</div></section>
+<section class="section container" id="articles"><div class="section-heading"><div><div class="eyebrow">THE KNOWLEDGE BASE</div><h2>Latest Articles</h2></div><a class="view-all" href="#articles">View all <span>↗</span></a></div>
+  <div class="filters" role="group" aria-label="Filter articles"><button class="filter-button active" data-filter="all">All</button><button class="filter-button" data-filter="linux">Linux &amp; Drivers</button><button class="filter-button" data-filter="firmware">Boot &amp; Firmware</button><button class="filter-button" data-filter="architecture">Architecture</button><button class="filter-button" data-filter="lab">Projects</button></div>
+  <div class="article-grid" id="articleGrid">
+    <article class="article-card" data-category="firmware"><a class="article-visual visual-chip" href="articles/bios-vs-uefi.html" aria-label="Read BIOS vs UEFI"><span class="image-chip">UEFI</span><span class="visual-caption">BOOT PROCESS</span></a><div class="article-body"><div class="article-meta"><span>BOOT &amp; FIRMWARE</span><span>7 MIN READ</span></div><h3><a href="articles/bios-vs-uefi.html">BIOS vs. UEFI</a></h3><p>Boot process, architecture, and key differences between legacy BIOS and modern UEFI.</p><a class="read-link" href="articles/bios-vs-uefi.html">Read article <span>↗</span></a></div></article>
+    <article class="article-card" data-category="architecture"><a class="article-visual visual-board" href="articles/dma-cache-coherency.html" aria-label="Read DMA and cache coherency"><span class="board-graphic"><i></i><i></i><i></i><b>CPU</b></span><span class="visual-caption">COMPUTER ARCHITECTURE</span></a><div class="article-body"><div class="article-meta"><span>ARCHITECTURE</span><span>10 MIN READ</span></div><h3><a href="articles/dma-cache-coherency.html">DMA and Cache Coherency</a></h3><p>Why a CPU and DMA device can see different data, and how cache maintenance helps.</p><a class="read-link" href="articles/dma-cache-coherency.html">Read article <span>↗</span></a></div></article>
+    <article class="article-card" data-category="firmware"><a class="article-visual visual-memory" href="articles/nor-vs-nand.html" aria-label="Read NOR versus NAND flash"><span class="memory-label">NOR FLASH <small>EXECUTE IN PLACE</small></span><span class="memory-label second">NAND FLASH <small>BLOCK STORAGE</small></span><span class="visual-caption">NON-VOLATILE MEMORY</span></a><div class="article-body"><div class="article-meta"><span>FIRMWARE</span><span>8 MIN READ</span></div><h3><a href="articles/nor-vs-nand.html">NOR vs. NAND Flash</a></h3><p>Read access, erase behavior, XIP, and where each flash technology fits.</p><a class="read-link" href="articles/nor-vs-nand.html">Read article <span>↗</span></a></div></article>
+    <article class="article-card" data-category="linux"><a class="article-visual visual-terminal" href="articles/linux-driver-probe.html" aria-label="Read Linux driver probe"><div class="terminal-window"><div class="terminal-bar"><i></i><i></i><i></i><span>driver_probe.c</span></div><pre><b>static int</b> demo_probe(<em>struct device</em> *dev)
 {
-  dev_info(dev,
-    <strong>"device ready\n"</strong>);
+  dev_info(dev, <strong>"device ready"</strong>);
   <span>return 0;</span>
-}</pre></div></div>
-          <div class="article-body"><div class="article-meta"><span>LINUX & DRIVERS</span><span>6 MIN READ</span></div><h3><a href="articles/linux-driver-probe.html">What Happens When a Linux Driver Probes?</a></h3><p>Follow the path from device matching to the driver's probe callback, resource setup, and initialization.</p><a class="read-link" href="articles/linux-driver-probe.html">Read the guide <span>↗</span></a></div>
-        </article>
-        <article class="article-card" data-category="firmware">
-          <div class="article-visual visual-flash"><span class="visual-tag">MEMORY / 002</span><div class="memory-stack"><div class="mem mem-one">NOR FLASH <small>READ / XIP</small></div><div class="mem mem-two">RAM <small>READ / WRITE</small></div><div class="mem mem-three">NAND <small>BLOCK STORAGE</small></div></div></div>
-          <div class="article-body"><div class="article-meta"><span>FIRMWARE</span><span>8 MIN READ</span></div><h3><a href="articles/nor-vs-nand.html">NOR vs. NAND Flash: What’s the Difference?</a></h3><p>Compare read access, erase behavior, execution in place, and where each memory type fits.</p><a class="read-link" href="articles/nor-vs-nand.html">Read the guide <span>↗</span></a></div>
-        </article>
-        <article class="article-card" data-category="architecture">
-          <div class="article-visual visual-cache"><span class="visual-tag">DATA PATH / 003</span><div class="cache-diagram"><div>CPU CORE</div><span>↕</span><div class="cache-box">CACHE</div><span>↕</span><div>DDR MEMORY</div><div class="dma-arrow">DMA DEVICE ─────→</div></div></div>
-          <div class="article-body"><div class="article-meta"><span>ARCHITECTURE</span><span>10 MIN READ</span></div><h3><a href="articles/dma-cache-coherency.html">DMA and Cache Coherency, Explained</a></h3><p>Why a device and CPU can see different data, and how cache maintenance and DMA APIs help.</p><a class="read-link" href="articles/dma-cache-coherency.html">Read the guide <span>↗</span></a></div>
-        </article>
-        <article class="article-card" data-category="firmware">
-          <div class="article-visual visual-terminal"><span class="visual-tag">BOOT FLOW / 005</span><div class="terminal-window"><div class="terminal-bar"><i></i><i></i><i></i><span>boot sequence</span></div><pre><b>POWER ON</b>
-   ↓
-<em>BIOS / UEFI</em>
-   ↓
-<strong>BOOTLOADER</strong>
-   ↓
-<span>OPERATING SYSTEM</span></pre></div></div>
-          <div class="article-body"><div class="article-meta"><span>FIRMWARE</span><span>7 MIN READ</span></div><h3><a href="articles/bios-vs-uefi.html">BIOS vs. UEFI: What’s the Difference?</a></h3><p>Compare legacy BIOS and UEFI boot flows, GPT and MBR, the EFI System Partition, and Secure Boot.</p><a class="read-link" href="articles/bios-vs-uefi.html">Read the guide <span>↗</span></a></div>
-        </article>
-        <article class="article-card" data-category="lab">
-          <div class="article-visual visual-lab"><span class="visual-tag">HANDS-ON / 004</span><div class="board-illustration"><div class="board-chip">SoC</div><div class="board-lines"></div><span class="board-port">UART</span><span class="board-port">SPI</span><span class="board-port">I²C</span></div></div>
-          <div class="article-body"><div class="article-meta"><span>PRACTICAL LABS</span><span>COMING SOON</span></div><h3><a href="#labs">Build a Simple Linux Character Driver</a></h3><p>A guided lab for understanding module initialization, file operations, and userspace interaction.</p><a class="read-link" href="#labs">Explore the lab <span>↗</span></a></div>
-        </article>
-      </div>
-    </section>
-
-    <section class="topics-section" id="topics"><div class="container section">
-      <div class="section-heading"><div><div class="eyebrow">FOLLOW THE SIGNAL</div><h2>Pick your <span class="text-gradient">discipline.</span></h2></div><p>Move between the layers that make a complete embedded system.</p></div>
-      <div class="topic-grid">
-        <a class="topic-card" href="#articles"><span class="topic-number">01 / SOFTWARE</span><span class="topic-icon">&lt;/&gt;</span><h3>Linux Kernel & Drivers</h3><p>Probe paths, interrupts, GPIO, I²C, SPI, PCIe, and DMA.</p><span class="topic-arrow">↗</span></a>
-        <a class="topic-card" href="#articles"><span class="topic-number">02 / PLATFORM</span><span class="topic-icon">▦</span><h3>Firmware & BSP</h3><p>Boot flow, board bring-up, memory maps, and RTOS.</p><span class="topic-arrow">↗</span></a>
-        <a class="topic-card" href="#articles"><span class="topic-number">03 / SILICON</span><span class="topic-icon">⌘</span><h3>Computer Architecture</h3><p>ARM, caches, MMU, multicore, and memory ordering.</p><span class="topic-arrow">↗</span></a>
-        <a class="topic-card" href="#articles"><span class="topic-number">04 / WORKBENCH</span><span class="topic-icon">⌁</span><h3>Practical Labs</h3><p>Repeatable experiments, debugging, and code walkthroughs.</p><span class="topic-arrow">↗</span></a>
-      </div>
-    </div></section>
-
-    <section class="section container labs-section" id="labs">
-      <div class="lab-copy"><div class="eyebrow">THE WORKBENCH</div><h2>Learn it. <span class="text-gradient">Trace it.</span><br>Test it.</h2><p>Low-level concepts become clearer when you can observe them. Practical Labs will collect small, reproducible experiments with setup instructions, expected output, and debugging notes.</p><a class="button button-primary" href="#articles">Browse learning paths <span>→</span></a></div>
-      <div class="lab-console"><div class="console-top"><span><i></i> LAB TERMINAL</span><span>SESSION 0001</span></div><div class="console-content"><p><span class="prompt">$</span> uname -r</p><p class="output">6.x.y-custom</p><p><span class="prompt">$</span> ls /sys/bus/platform/drivers</p><p class="output">gpio-demo&nbsp;&nbsp; spi-controller&nbsp;&nbsp;...</p><p><span class="prompt">$</span> <span class="cursor"></span></p><div class="console-status"><span><i></i> READY FOR EXPERIMENT</span><span>EXIT 0</span></div></div></div>
-    </section>
-
-    <section class="about-section" id="about"><div class="container about-inner"><div class="about-symbol" aria-hidden="true"><span>LL</span><i></i></div><div><div class="eyebrow">ABOUT LOWLEVEL LABS</div><h2>Less magic. <span class="text-gradient">More understanding.</span></h2><p>LowLevel Labs is a knowledge-sharing space for engineers and curious builders who want to understand how software interacts with hardware. The goal is simple: break complex topics into clear mental models, practical examples, and experiments you can reproduce.</p><p class="about-small">Independent learning notes. Practical examples. Respect for the details.</p></div></div></section>
-
-    <section class="section container newsletter-section" id="newsletter"><div class="newsletter-card"><div><div class="eyebrow">STAY CURIOUS</div><h2>Follow the next <span class="text-gradient">signal.</span></h2><p>New technical notes and practical experiments will appear here as they are published.</p></div><a class="button button-primary" href="#articles">Explore the articles <span>→</span></a></div></section>
-  </main>
-
-  <footer class="site-footer"><div class="container footer-inner"><a class="brand footer-brand" href="#"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span>LowLevel<span class="brand-accent">Labs</span><small>HARDWARE TO SOFTWARE</small></span></a><p>Understand systems from hardware to software.</p><div class="footer-links"><a href="#articles">Articles</a><a href="#about">About</a><a href="mailto:hello@lowlevellabs.in">Contact</a></div><small class="copyright">© <span id="year"></span> LowLevel Labs. Built for curious engineers.</small></div></footer>
-</body>
-</html>
+}</pre></div><span class="visual-caption">LINUX KERNEL</span></a><div class="article-body"><div class="article-meta"><span>LINUX &amp; DRIVERS</span><span>6 MIN READ</span></div><h3><a href="articles/linux-driver-probe.html">What Happens When a Linux Driver Probes?</a></h3><p>Follow device matching, resource setup, and the driver's probe callback.</p><a class="read-link" href="articles/linux-driver-probe.html">Read article <span>↗</span></a></div></article>
+  </div>
+</section>
+<section class="projects-section" id="projects"><div class="container project-inner"><div><div class="eyebrow"><span class="eyebrow-line"></span> FROM THE WORKBENCH</div><h2>Learn by tracing.<br><span>Build by testing.</span></h2><p>Low-level concepts become clearer when you connect the theory to real hardware, logs, waveforms, and code. This is a growing collection of notes from that process.</p><a class="button button-primary" href="#articles">Explore the lab</a></div><div class="project-diagram"><div class="diagram-node">Application</div><span>↓</span><div class="diagram-node">Operating System</div><span>↓</span><div class="diagram-node active-node">Drivers · BSP · Firmware</div><span>↓</span><div class="diagram-node">Hardware</div></div></div></section>
+<section class="about-section" id="about"><div class="container about-inner"><div class="about-symbol"><span>LL</span></div><div><div class="eyebrow">ABOUT LOWLEVEL LABS</div><h2>Curiosity below the abstraction.</h2><p>LowLevel Labs is a technical knowledge space for embedded software, Linux internals, firmware, processor architecture, and hands-on debugging. The goal is simple: explain how systems work beneath the APIs—and share practical notes that help engineers reason from hardware to software.</p><p class="about-small">UNDERSTAND · EXPERIMENT · DOCUMENT</p></div></div></section>
+</main>
+<footer class="site-footer"><div class="container footer-inner"><a class="brand footer-brand" href="index.html"><span class="brand-mark"><span></span><span></span><span></span><span></span></span><span class="brand-name">LowLevel Labs</span></a><p>Technical notes on embedded systems.</p><div class="footer-links"><a href="#articles">Articles</a><a href="#topics">Topics</a><a href="#about">About</a></div><small class="copyright">© <span id="year">2026</span> LowLevel Labs</small></div></footer>
+</body></html>
