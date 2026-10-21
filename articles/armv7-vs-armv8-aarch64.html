@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A practical embedded-systems comparison of Armv7-A and Armv8-A, including AArch32, AArch64, exceptions, MMU, registers, and migration considerations.">
+  <title>Armv7-A vs Armv8-A (AArch64) — LowLevel Labs</title>
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<header class="site-header"><div class="container nav-wrap">
+  <a class="brand" href="../"><span class="brand-mark"><span></span><span></span><span></span><span></span></span><span>LowLevel<span class="brand-accent">Labs</span><small>HARDWARE TO SOFTWARE</small></span></a>
+  <nav class="nav-links" aria-label="Main navigation"><a href="../#articles">Articles</a><a href="../#topics">Topics</a><a href="../#about">About</a></nav>
+</div></header>
+<main class="container section article-page">
+  <a class="read-link" href="../#articles">← Back to articles</a>
+  <div class="eyebrow" style="margin-top:28px">PROCESSOR ARCHITECTURE · PRACTICAL GUIDE</div>
+  <h1 style="font-size:clamp(36px,5vw,58px);max-width:900px">Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64</h1>
+  <p class="hero-copy">The important shift is not simply 32-bit to 64-bit. Armv8-A introduces a new execution state, a different exception model, a larger register set, and architectural changes that affect boot code, kernels, and low-level debugging.</p>
+  <div class="article-content">
+    <h2>First, understand the names</h2>
+    <p><strong>Armv7-A</strong> is an application-profile architecture generation commonly associated with 32-bit AArch32 execution. <strong>Armv8-A</strong> introduced AArch64, a 64-bit execution state, while also supporting AArch32 in many implementations. Support for AArch32 is optional in some later Armv8-A and newer implementations, so always check the specific CPU.</p>
+    <p><strong>AArch32 and AArch64 are execution states</strong>, not processor models. A CPU implementing Armv8-A may run AArch64 software and, where implemented, AArch32 software. An operating system's supported state also depends on firmware, boot configuration, and the software image.</p>
+
+    <h2>At-a-glance comparison</h2>
+    <table>
+      <thead><tr><th>Area</th><th>Armv7-A / AArch32</th><th>Armv8-A / AArch64</th></tr></thead>
+      <tbody>
+        <tr><td>General-purpose registers</td><td>R0–R15 in the classic programmer's model, with banked registers in some modes</td><td>X0–X30, plus the stack pointer selected for the current exception level</td></tr>
+        <tr><td>Instruction set</td><td>A32 and, on supporting implementations, 16-bit Thumb encodings</td><td>A64 in AArch64; AArch32 execution can be available as a separate state</td></tr>
+        <tr><td>Addressing</td><td>32-bit virtual addresses in the usual AArch32 application model</td><td>64-bit registers and an architecturally defined virtual-address model; implemented address width is configuration-dependent</td></tr>
+        <tr><td>Exception model</td><td>Processor modes and banked registers; exceptions use vectors and mode transitions</td><td>Exception levels EL0–EL3, with stack pointers and vector tables structured around exception level and execution state</td></tr>
+        <tr><td>System registers</td><td>Many system controls are accessed through CP15 in common AArch32 implementations</td><td>AArch64 uses named system registers accessed with instructions such as <code>MRS</code> and <code>MSR</code></td></tr>
+        <tr><td>MMU and translation</td><td>Short-descriptor or long-descriptor translation formats depending on configuration and extensions</td><td>AArch64 translation regimes use translation tables and configurable translation granules, commonly 4 KiB, 16 KiB, or 64 KiB where supported</td></tr>
+        <tr><td>Typical software context</td><td>32-bit Linux, RTOS firmware, and embedded applications</td><td>64-bit operating systems, newer firmware stacks, and applications needing a larger address space</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Registers: R0–R15 versus X0–X30</h2>
+    <p>In AArch32, general-purpose registers are conventionally named <code>R0</code> through <code>R15</code>. The roles of registers such as the stack pointer, link register, and program counter are tied to the AArch32 programmer's model, and exception modes can provide banked registers.</p>
+    <p>In AArch64, the general-purpose registers are <code>X0</code>–<code>X30</code>. Their 32-bit views are named <code>W0</code>–<code>W30</code>; writing a W register zero-extends the result into its corresponding X register. <code>X30</code> is commonly used as the link register, and <code>SP</code> names the active stack pointer in contexts where it is valid.</p>
+    <p>AArch64 does not expose the program counter as an ordinary general-purpose register. Control flow is handled by branches, and the current instruction address can be obtained using PC-relative addressing patterns such as <code>ADR</code> and <code>ADRP</code>.</p>
+
+    <h2>Instruction-set differences</h2>
+    <p>AArch32 includes the A32 instruction set and may include Thumb, depending on the implementation. AArch64 uses the A64 instruction set, with fixed-width 32-bit instruction encodings. A64 is not just A32 with wider registers: instruction encodings, calling conventions, addressing forms, and system-register access differ.</p>
+    <p>For example, AArch64 commonly uses <code>STP</code> and <code>LDP</code> to store and load register pairs, often for function prologues and epilogues. Code ported from AArch32 should be rebuilt and reviewed for the AArch64 ABI rather than mechanically changing register names.</p>
+
+    <h2>Exception handling: processor modes vs. exception levels</h2>
+    <p>AArch32 traditionally describes privileged execution using modes such as User, Supervisor, IRQ, FIQ, Abort, Undefined, and System, with banked registers for selected modes. Exception vectors and the relevant status registers help the handler identify and restore the interrupted context.</p>
+    <p>AArch64 organizes privilege into exception levels: <strong>EL0</strong> is typically applications, <strong>EL1</strong> an operating-system kernel, <strong>EL2</strong> a hypervisor, and <strong>EL3</strong> secure monitor or firmware. Not every platform uses every level, and the security architecture and software configuration determine the actual transitions.</p>
+    <p>On exception entry, the processor records return state in exception-related registers such as <code>ELR_ELx</code> and <code>SPSR_ELx</code>, then branches through a vector table selected for the target exception level and the origin context. A handler returns using an exception-return instruction such as <code>ERET</code>.</p>
+
+    <h2>MMU and address translation</h2>
+    <p>Both architecture generations can use an MMU to translate virtual addresses to physical addresses and enforce access permissions. The formats and control registers differ between AArch32 and AArch64, so early boot code must configure translation tables and control registers according to the current execution state.</p>
+    <p>In AArch64, <code>TTBR0_EL1</code> and <code>TTBR1_EL1</code> commonly point to translation tables for different virtual-address regions, while <code>TCR_EL1</code> configures translation properties and <code>MAIR_EL1</code> defines memory attributes. The exact arrangement depends on the operating system and platform. A larger register width does not mean every CPU supports the full 64-bit virtual address space.</p>
+
+    <h2>Boot and firmware implications</h2>
+    <ul>
+      <li><strong>Reset and initial execution:</strong> the reset state and entry point are defined by the processor and platform. Firmware must establish a valid execution environment before transferring control.</li>
+      <li><strong>Execution-state transition:</strong> a boot chain may start in one supported state and transition to another, but the exact path depends on the CPU, security configuration, and firmware design.</li>
+      <li><strong>Exception levels:</strong> firmware commonly configures which exception level the operating system enters at and which controls it inherits.</li>
+      <li><strong>MMU and caches:</strong> startup code must follow the architecture's required sequencing for translation, cacheability, barriers, and instruction synchronization.</li>
+      <li><strong>Device tree and kernel image:</strong> the bootloader must provide the correct kernel image, device tree, and boot arguments for the target platform and OS build.</li>
+    </ul>
+
+    <h2>What changes when porting low-level code?</h2>
+    <ul>
+      <li>Review pointer sizes, integer assumptions, structure layout, and code that stores addresses in 32-bit variables.</li>
+      <li>Use the correct compiler target and ABI; do not mix objects built for AArch32 and AArch64 in the same ordinary process.</li>
+      <li>Rewrite inline assembly and exception entry/exit code for the target execution state.</li>
+      <li>Update system-register access, interrupt-controller integration, and MMU setup for the target architecture and SoC.</li>
+      <li>Verify alignment, calling convention, stack handling, and atomic operations.</li>
+      <li>Check whether required features are implemented by the specific core instead of assuming all Armv8-A CPUs are identical.</li>
+    </ul>
+
+    <h2>Practical debugging checklist</h2>
+    <ul>
+      <li>Identify the exact core and architecture revision from the processor documentation.</li>
+      <li>Confirm whether the binary is AArch32 or AArch64 using your toolchain's file and ELF inspection tools.</li>
+      <li>Inspect the exception level, vector base, translation controls, and current stack during early boot when debugging AArch64 firmware.</li>
+      <li>Check linker scripts, image load addresses, device tree, and bootloader hand-off assumptions.</li>
+      <li>When an exception occurs, capture the fault address and syndrome registers where applicable, plus the saved return address and processor state.</li>
+    </ul>
+
+    <h2>Key takeaway</h2>
+    <p>Armv7-A is strongly associated with 32-bit AArch32 systems, while Armv8-A introduced AArch64 and a substantially revised execution and exception model. For firmware and kernel engineers, the most important differences are the execution state, register and ABI model, exception handling, system-register interface, and MMU setup—not just the size of an address or register.</p>
+    <p class="content-note">This article is an architectural overview. Exact features vary by core and architecture revision; use the Arm Architecture Reference Manual and the technical reference manual for the specific processor when implementing boot or exception code.</p>
+  </div>
+</main>
+<footer class="site-footer"><div class="container footer-inner">
+  <a class="brand footer-brand" href="../"><span class="brand-mark"><span></span><span></span><span></span><span></span></span><span>LowLevel<span class="brand-accent">Labs</span><small>HARDWARE TO SOFTWARE</small></span></a>
+  <p>Understand systems from hardware to software.</p><div class="footer-links"><a href="../#articles">Articles</a><a href="../#about">About</a></div><small class="copyright">© LowLevel Labs</small>
+</div></footer>
+</body>
+</html>
