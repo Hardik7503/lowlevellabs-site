@@ -24,57 +24,7 @@
   search?.addEventListener("input",()=>{const q=search.value.trim().toLowerCase();if(!q){close();return}const found=Object.entries(worlds).find(([,w])=>w.title.toLowerCase().includes(q)||w.articles.some(([n])=>n.toLowerCase().includes(q)));if(found)open(found[0]);});
 
 
-  // Move the topic worlds around the CPU along elliptical orbits continuously.
-  const orbitSpecs={
-    boot:{rx:.29,ry:.27,phase:3.8,speed:.19},
-    arch:{rx:.12,ry:.15,phase:4.8,speed:.27},
-    os:{rx:.31,ry:.29,phase:5.7,speed:.16},
-    drivers:{rx:.40,ry:.08,phase:6.1,speed:.13},
-    memory:{rx:.16,ry:.39,phase:1.6,speed:.21},
-    multi:{rx:.32,ry:.30,phase:.7,speed:-.17},
-    io:{rx:.41,ry:.13,phase:3.3,speed:.14},
-    debug:{rx:.28,ry:.30,phase:2.6,speed:-.20}
-  };
-  const orbitStart=performance.now();
-  let orbitFrame=0;
-  function animatePlanets(now){
-    const stage=document.querySelector("#solarStage");
-    if(!stage)return;
-    const rect=stage.getBoundingClientRect();
-    const baseWidth=stage.offsetWidth,baseHeight=stage.offsetHeight;
-    const mobileScale=window.innerWidth<=380?.49:window.innerWidth<=650?.57:window.innerWidth<=1100?.87:1;
-    // Position in the unscaled stage coordinate system so it remains centered on the CPU.
-    const cx=baseWidth/2,cy=baseHeight*.51;
-    const elapsed=(now-orbitStart)/1000;
-    planets.forEach(p=>{
-      const spec=orbitSpecs[p.dataset.world];if(!spec)return;
-      const angle=spec.phase+elapsed*spec.speed;
-      const rx=Math.min(baseWidth*.44,baseWidth*spec.rx);
-      const ry=Math.min(baseHeight*.43,baseHeight*spec.ry);
-      const x=cx+Math.cos(angle)*rx;
-      const y=cy+Math.sin(angle)*ry;
-      p.style.left=(x-p.offsetWidth/2)+"px";
-      p.style.top=(y-p.offsetHeight/2)+"px";
-    });
-    orbitFrame=requestAnimationFrame(animatePlanets);
-  }
-  if(!window.matchMedia("(prefers-reduced-motion: reduce)").matches)orbitFrame=requestAnimationFrame(animatePlanets);
-
-  // Scroll progress gently zooms the solar system in, then out as the visitor moves past it.
-  let scrollFrame=0;
-  function updateScrollZoom(){
-    scrollFrame=0;
-    const rect=hero.getBoundingClientRect();
-    const vh=window.innerHeight||800;
-    const progress=Math.max(0,Math.min(1,(vh-rect.top)/(vh+rect.height)));
-    const zoom=1+0.2*Math.sin(progress*Math.PI);
-    hero.style.setProperty("--scroll-zoom",zoom.toFixed(3));
-    const stage=document.querySelector("#solarStage");
-    if(stage)stage.style.setProperty("--scroll-zoom",zoom.toFixed(3));
-  }
-  function requestScrollZoom(){if(!scrollFrame)scrollFrame=requestAnimationFrame(updateScrollZoom);}
-  window.addEventListener("scroll",requestScrollZoom,{passive:true});
-  window.addEventListener("resize",requestScrollZoom);
-  updateScrollZoom();
+  // Static, readable topic layout: planets stay in their designed orbit positions.
+  // Scroll zoom and continuous motion are intentionally disabled for this light-mode design.
 
 })();
