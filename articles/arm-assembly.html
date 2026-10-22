@@ -30,8 +30,8 @@
 <div class="resource-actions"><a href="../assets/ARM_32bit_Assembly_Programming.pdf" target="_blank" rel="noopener">Read PDF ↗</a><a href="../assets/ARM_32bit_Assembly_Programming.pdf" download>Download PDF ↓</a></div>
 </section>
 <section class="resource-panel code-resource"><h2>ARM 32bit Assembly Exercises</h2><p>All exercises and their complete source code are included below. Expand a program to inspect its solution.</p><div class="asm-toolbar"><button type="button" id="expandAll">Expand all programs</button><button type="button" id="collapseAll">Collapse all programs</button></div><div class="asm-exercises"><h1>ARM (32-bit) Exercises: Corrected Solutions</h1>
-<p>Legend: 🔧 = bug fixed, ✅ = already correct (only tidied/commented).   Note: Linux process exit codes are 8-bit; a result of -7 appears as 249 in <code>echo $?</code>.</p>
-<h2>Prog 23: Sum 1 to 5 <span class="ok-mark">✅</span></h2>
+<p>Legend:  = bug fixed,  = already correct (only tidied/commented).   Note: Linux process exit codes are 8-bit; a result of -7 appears as 249 in <code>echo $?</code>.</p>
+<h2>Prog 23: Sum 1 to 5 <span class="ok-mark"></span></h2>
 <p>Expected: 15</p>
 <pre class="asm-code"><code>.section .text
 .global _start
@@ -47,7 +47,7 @@ loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 27: Max element <span class="ok-mark">✅</span></h2>
+<h2>Prog 27: Max element <span class="ok-mark"></span></h2>
 <p>Expected: 23</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 4, 17, 9, 23, 5
@@ -71,7 +71,7 @@ loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 28: Sum of all elements <span class="ok-mark">✅</span></h2>
+<h2>Prog 28: Sum of all elements <span class="ok-mark"></span></h2>
 <p>Expected: 30</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 2, 4, 6, 8, 10
@@ -94,7 +94,7 @@ arr_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 31: Sum elements divisible by 3 <span class="ok-mark">✅</span></h2>
+<h2>Prog 31: Sum elements divisible by 3 <span class="ok-mark"></span></h2>
 <p>Expected: 24. Requires an ARM CPU supporting <code>sdiv</code>.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 3, 5, 9, 10, 12, 14
@@ -123,7 +123,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 32: Minimum element <span class="ok-mark">✅</span></h2>
+<h2>Prog 32: Minimum element <span class="ok-mark"></span></h2>
 <p>Expected: -8 (exit status 248)</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 7, -3, 12, -8, 5
@@ -147,7 +147,7 @@ arr_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 35: Maximum absolute value <span class="fix-mark">🔧</span></h2>
+<h2>Prog 35: Maximum absolute value <span class="fix-mark"></span></h2>
 <p>Expected: 22. The loop comparison must be <code>cmp r1, r2</code>, not <code>cmp r2, r1</code>.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 4, -15, 9, -22, 7
@@ -178,7 +178,7 @@ arr_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 36: Index of maximum value <span class="ok-mark">✅</span></h2>
+<h2>Prog 36: Index of maximum value <span class="ok-mark"></span></h2>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 6, 18, 3, 25, 10
@@ -207,7 +207,7 @@ exit:
     mov r0, r5
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 39: Count values divisible by 4 <span class="ok-mark">✅</span></h2>
+<h2>Prog 39: Count values divisible by 4 <span class="ok-mark"></span></h2>
 <p>Expected: 4</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 4, 7, 12, 16, 5, 20
@@ -233,7 +233,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 40: Index of first even element <span class="ok-mark">✅</span></h2>
+<h2>Prog 40: Index of first even element <span class="ok-mark"></span></h2>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 7, 9, 5, 12, 3, 8
@@ -260,7 +260,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 43: Last index of element greater than 10 <span class="ok-mark">✅</span></h2>
+<h2>Prog 43: Last index of element greater than 10 <span class="ok-mark"></span></h2>
 <p>Expected: 5</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 4, 7, 3, 15, 8, 20
@@ -286,7 +286,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 44: Count negative numbers <span class="ok-mark">✅</span></h2>
+<h2>Prog 44: Count negative numbers <span class="ok-mark"></span></h2>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, -3, 12, -7, 9, -1
@@ -312,7 +312,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 47: Smallest negative number <span class="ok-mark">✅</span></h2>
+<h2>Prog 47: Smallest negative number <span class="ok-mark"></span></h2>
 <p>Expected: -7 (exit status 249)</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, -3, 12, -7, 9, -1
@@ -340,7 +340,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 48: Index of smallest negative number <span class="ok-mark">✅</span></h2>
+<h2>Prog 48: Index of smallest negative number <span class="ok-mark"></span></h2>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, -3, 12, -7, 9, -1
@@ -373,7 +373,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 61: Sum of even numbers <span class="ok-mark">✅</span></h2>
+<h2>Prog 61: Sum of even numbers <span class="ok-mark"></span></h2>
 <p>Expected: 24</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, -3, 12, -7, 9, -1, 8, 4
@@ -399,7 +399,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 62: Count multiples of 8 <span class="ok-mark">✅</span></h2>
+<h2>Prog 62: Count multiples of 8 <span class="ok-mark"></span></h2>
 <p>Expected: 4</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, 8, 12, 16, 24, 7, 32
@@ -425,7 +425,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Prog 65: Structure, set READY bit <span class="fix-mark">🔧</span></h2>
+<h2>Prog 65: Structure, set READY bit <span class="fix-mark"></span></h2>
 <p>Expected: 1. Fixed <code>.global _start</code> spacing and <code>pop {lr}</code>.</p>
 <pre class="asm-code"><code>.section .data
 device:
@@ -448,7 +448,7 @@ set_ready:
     str r1, [r0, #8]
     pop {lr}
     bx lr</code></pre>
-<h2>Prog 69: Function sum_array <span class="fix-mark">🔧</span></h2>
+<h2>Prog 69: Function sum_array <span class="fix-mark"></span></h2>
 <p>Expected: 100. Fixed array addressing to use loop index <code>r4</code>.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 10, 20, 30, 40
@@ -477,7 +477,7 @@ done:
     mov r0, r5
     pop {r4-r6, lr}
     bx lr</code></pre>
-<h2>Prog 70: Function max_array <span class="fix-mark">🔧</span></h2>
+<h2>Prog 70: Function max_array <span class="fix-mark"></span></h2>
 <p>Expected: 99. Fixed invalid <code>mov r5, [r0]</code> to <code>ldr r5, [r0]</code> and corrected the max update direction.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 10, 55, 23, 99, 41
@@ -509,7 +509,7 @@ done:
     mov r0, r5
     pop {r4-r6, lr}
     bx lr</code></pre>
-<h2>Prog 73: Function min_max <span class="ok-mark">✅</span></h2>
+<h2>Prog 73: Function min_max <span class="ok-mark"></span></h2>
 <p>Expected: min = 3 (r0), max = 88 (r1). The exit code displays the low 8 bits of r0.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 42, 7, 19, 3, 88, 25
