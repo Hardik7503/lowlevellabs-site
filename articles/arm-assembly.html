@@ -11,7 +11,9 @@
 <style>
 .resource-panel{margin-top:2rem;padding:1.5rem;border:1px solid var(--border-color,#ddd);border-radius:16px;background:var(--surface,#fff)}.resource-panel h2{margin-top:0}.resource-actions{display:flex;gap:1rem;flex-wrap:wrap;margin:1.25rem 0}.resource-actions a{display:inline-block;padding:.8rem 1rem;border-radius:8px;text-decoration:none;border:1px solid currentColor}.resource-note{opacity:.8}
 </style>
-</head>
+<style>
+.code-resource{margin-top:2rem}.asm-toolbar{display:flex;gap:.7rem;flex-wrap:wrap;margin:1rem 0 1.5rem}.asm-toolbar button{cursor:pointer;padding:.65rem .9rem;border:1px solid #bbb;border-radius:8px;background:transparent;color:inherit}.asm-exercises h2{font-size:1.35rem;margin-top:2rem}.asm-exercises h3{font-size:1.1rem;margin-top:1.5rem}.asm-exercises pre.asm-code{overflow-x:auto;padding:1rem;border-radius:10px;background:#171b22;color:#e8edf2;font-size:.9rem;line-height:1.55;white-space:pre}.asm-exercises pre code{color:inherit}.asm-exercises p{line-height:1.65}.asm-exercises hr{margin:1.5rem 0;border:0;border-top:1px solid #ddd}.fix-mark,.ok-mark{font-size:.85em}
+</style></head>
 <body>
 <header class="site-header"><div class="container nav-wrap">
 <a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a>
@@ -27,14 +29,526 @@
 <p>Read the guide in your browser or download the PDF for offline study.</p>
 <div class="resource-actions"><a href="../assets/ARM_32bit_Assembly_Programming.pdf" target="_blank" rel="noopener">Read PDF ↗</a><a href="../assets/ARM_32bit_Assembly_Programming.pdf" download>Download PDF ↓</a></div>
 </section>
-<section class="resource-panel">
-<h2>Corrected ARM Assembly Exercises</h2>
-<p>The exercise file contains corrected solutions for array processing, min/max calculations, counting and filtering values, structure bit manipulation, and assembly functions. It includes expected results and notes about fixes.</p>
-<div class="resource-actions"><a href="https://github.com/Hardik7503/lowlevellabs-site/blob/main/assets/arm_programs_corrected.md" target="_blank" rel="noopener">Read all code and explanations ↗</a><a href="../assets/arm_programs_corrected.md" download>Download Markdown file ↓</a></div>
-<p class="resource-note">The code file is provided as Markdown so you can inspect the full source, copy the assembly examples, or download it for local use.</p>
-</section>
+<section class="resource-panel code-resource"><h2>Corrected ARM Assembly Exercises</h2><p>All exercises and their complete source code are included below. Expand a program to inspect its solution.</p><div class="asm-toolbar"><button type="button" id="expandAll">Expand all programs</button><button type="button" id="collapseAll">Collapse all programs</button></div><div class="asm-exercises"><h1>ARM (32-bit) Exercises: Corrected Solutions</h1>
+<p>Legend: 🔧 = bug fixed, ✅ = already correct (only tidied/commented).   Note: Linux process exit codes are 8-bit; a result of -7 appears as 249 in <code>echo $?</code>.</p>
+<h2>Prog 23: Sum 1 to 5 <span class="ok-mark">✅</span></h2>
+<p>Expected: 15</p>
+<pre class="asm-code"><code>.section .text
+.global _start
+_start:
+    mov r0, #0
+    mov r1, #1
+    mov r2, #5
+loop:
+    add r0, r0, r1
+    add r1, r1, #1
+    cmp r1, r2
+    ble loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 27: Max element <span class="ok-mark">✅</span></h2>
+<p>Expected: 23</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 4, 17, 9, 23, 5
+len:  .word 5
+.section .text
+.global _start
+_start:
+    ldr r3, =nums
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r0, [r3]
+    mov r1, #1
+loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    cmp r4, r0
+    movgt r0, r4
+    add r1, r1, #1
+    b loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 28: Sum of all elements <span class="ok-mark">✅</span></h2>
+<p>Expected: 30</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 2, 4, 6, 8, 10
+len:  .word 5
+.section .text
+.global _start
+_start:
+    mov r0, #0
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    add r0, r0, r4
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 31: Sum elements divisible by 3 <span class="ok-mark">✅</span></h2>
+<p>Expected: 24. Requires an ARM CPU supporting <code>sdiv</code>.</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 3, 5, 9, 10, 12, 14
+len: .word 6
+.section .text
+.global _start
+_start:
+    mov r0, #0
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    mov r5, #3
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    sdiv r6, r4, r5
+    mul r6, r6, r5
+    subs r6, r4, r6
+    bne next_loop
+    add r0, r0, r4
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 32: Minimum element <span class="ok-mark">✅</span></h2>
+<p>Expected: -8 (exit status 248)</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 7, -3, 12, -8, 5
+len: .word 5
+.section .text
+.global _start
+_start:
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+    ldr r0, [r3]
+    mov r1, #1
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    cmp r4, r0
+    movlt r0, r4
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 35: Maximum absolute value <span class="fix-mark">🔧</span></h2>
+<p>Expected: 22. The loop comparison must be <code>cmp r1, r2</code>, not <code>cmp r2, r1</code>.</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 4, -15, 9, -22, 7
+len: .word 5
+.section .text
+.global _start
+_start:
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+    ldr r4, [r3, r1, LSL #2]
+    cmp r4, #0
+    rsblt r0, r4, #0
+    movge r0, r4
+    add r1, r1, #1
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    cmp r4, #0
+    rsblt r5, r4, #0
+    movge r5, r4
+    cmp r5, r0
+    movgt r0, r5
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 36: Index of maximum value <span class="ok-mark">✅</span></h2>
+<p>Expected: 3</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 6, 18, 3, 25, 10
+len: .word 5
+.section .text
+.global _start
+_start:
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+    ldr r0, [r3]
+    mov r5, #0
+    mov r1, #1
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    cmp r4, r0
+    ble next_loop
+    mov r0, r4
+    mov r5, r1
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r0, r5
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 39: Count values divisible by 4 <span class="ok-mark">✅</span></h2>
+<p>Expected: 4</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 4, 7, 12, 16, 5, 20
+len: .word 6
+.section .text
+.global _start
+_start:
+    mov r0, #0
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    ands r5, r4, #3
+    bne next_loop
+    add r0, r0, #1
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 40: Index of first even element <span class="ok-mark">✅</span></h2>
+<p>Expected: 3</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 7, 9, 5, 12, 3, 8
+len: .word 6
+.section .text
+.global _start
+_start:
+    mov r0, #-1
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    ands r5, r4, #1
+    bne next_loop
+    mov r0, r1
+    b exit
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 43: Last index of element greater than 10 <span class="ok-mark">✅</span></h2>
+<p>Expected: 5</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 4, 7, 3, 15, 8, 20
+len: .word 6
+.section .text
+.global _start
+_start:
+    mov r0, #-1
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    cmp r4, #10
+    ble next_loop
+    mov r0, r1
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 44: Count negative numbers <span class="ok-mark">✅</span></h2>
+<p>Expected: 3</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 5, -3, 12, -7, 9, -1
+len: .word 6
+.section .text
+.global _start
+_start:
+    mov r0, #0
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    cmp r4, #0
+    bge next_loop
+    add r0, r0, #1
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 47: Smallest negative number <span class="ok-mark">✅</span></h2>
+<p>Expected: -7 (exit status 249)</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 5, -3, 12, -7, 9, -1
+len: .word 6
+.section .text
+.global _start
+_start:
+    mov r0, #0
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    cmp r4, #0
+    bge next_loop
+    cmp r4, r0
+    bge next_loop
+    mov r0, r4
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 48: Index of smallest negative number <span class="ok-mark">✅</span></h2>
+<p>Expected: 3</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 5, -3, 12, -7, 9, -1
+len: .word 6
+.section .text
+.global _start
+_start:
+    mov r0, #-1
+    mov r5, #0
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    cmp r4, #0
+    bge next_loop
+    cmp r0, #-1
+    beq update
+    cmp r4, r5
+    bge next_loop
+update:
+    mov r5, r4
+    mov r0, r1
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 61: Sum of even numbers <span class="ok-mark">✅</span></h2>
+<p>Expected: 24</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 5, -3, 12, -7, 9, -1, 8, 4
+len: .word 8
+.section .text
+.global _start
+_start:
+    mov r0, #0
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    tst r4, #1
+    bne next_loop
+    add r0, r0, r4
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 62: Count multiples of 8 <span class="ok-mark">✅</span></h2>
+<p>Expected: 4</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 5, 8, 12, 16, 24, 7, 32
+len: .word 7
+.section .text
+.global _start
+_start:
+    mov r0, #0
+    mov r1, #0
+    ldr r2, =len
+    ldr r2, [r2]
+    ldr r3, =nums
+arr_loop:
+    cmp r1, r2
+    bge exit
+    ldr r4, [r3, r1, LSL #2]
+    ands r5, r4, #7
+    bne next_loop
+    add r0, r0, #1
+next_loop:
+    add r1, r1, #1
+    b arr_loop
+exit:
+    mov r7, #1
+    svc #0</code></pre>
+<h2>Prog 65: Structure, set READY bit <span class="fix-mark">🔧</span></h2>
+<p>Expected: 1. Fixed <code>.global _start</code> spacing and <code>pop {lr}</code>.</p>
+<pre class="asm-code"><code>.section .data
+device:
+    .word 100
+    .word 55
+    .word 0
+.section .text
+.global _start
+_start:
+    ldr r0, =device
+    bl set_ready
+    ldr r1, [r0, #8]
+    mov r0, r1
+    mov r7, #1
+    svc #0
+set_ready:
+    push {lr}
+    ldr r1, [r0, #8]
+    orr r1, r1, #1
+    str r1, [r0, #8]
+    pop {lr}
+    bx lr</code></pre>
+<h2>Prog 69: Function sum_array <span class="fix-mark">🔧</span></h2>
+<p>Expected: 100. Fixed array addressing to use loop index <code>r4</code>.</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 10, 20, 30, 40
+len: .word 4
+.section .text
+.global _start
+_start:
+    ldr r0, =nums
+    ldr r1, =len
+    ldr r1, [r1]
+    bl sum_array
+    mov r7, #1
+    svc #0
+sum_array:
+    push {r4-r6, lr}
+    mov r4, #0
+    mov r5, #0
+arr_loop:
+    cmp r4, r1
+    bge done
+    ldr r6, [r0, r4, LSL #2]
+    add r5, r5, r6
+    add r4, r4, #1
+    b arr_loop
+done:
+    mov r0, r5
+    pop {r4-r6, lr}
+    bx lr</code></pre>
+<h2>Prog 70: Function max_array <span class="fix-mark">🔧</span></h2>
+<p>Expected: 99. Fixed invalid <code>mov r5, [r0]</code> to <code>ldr r5, [r0]</code> and corrected the max update direction.</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 10, 55, 23, 99, 41
+len: .word 5
+.section .text
+.global _start
+_start:
+    ldr r0, =nums
+    ldr r1, =len
+    ldr r1, [r1]
+    bl max_array
+    mov r7, #1
+    svc #0
+max_array:
+    push {r4-r6, lr}
+    ldr r5, [r0]
+    mov r4, #1
+arr_loop:
+    cmp r4, r1
+    bge done
+    ldr r6, [r0, r4, LSL #2]
+    cmp r6, r5
+    ble next_loop
+    mov r5, r6
+next_loop:
+    add r4, r4, #1
+    b arr_loop
+done:
+    mov r0, r5
+    pop {r4-r6, lr}
+    bx lr</code></pre>
+<h2>Prog 73: Function min_max <span class="ok-mark">✅</span></h2>
+<p>Expected: min = 3 (r0), max = 88 (r1). The exit code displays the low 8 bits of r0.</p>
+<pre class="asm-code"><code>.section .data
+nums: .word 42, 7, 19, 3, 88, 25
+len: .word 6
+.section .text
+.global _start
+_start:
+    ldr r0, =nums
+    ldr r1, =len
+    ldr r1, [r1]
+    bl min_max
+    mov r7, #1
+    svc #0
+min_max:
+    push {r4-r7, lr}
+    ldr r6, [r0]
+    mov r7, r6
+    mov r4, #1
+arr_loop:
+    cmp r4, r1
+    bge done
+    ldr r5, [r0, r4, LSL #2]
+    cmp r5, r6
+    movlt r6, r5
+    cmp r5, r7
+    movgt r7, r5
+    add r4, r4, #1
+    b arr_loop
+done:
+    mov r0, r6
+    mov r1, r7
+    pop {r4-r7, lr}
+    bx lr</code></pre>
+</div></section>
 <p style="margin-top:2rem"><a href="../projects.html">← Back to Engineering Projects</a></p>
 </main>
 <footer class="site-footer"><div class="container footer-inner"><a class="brand footer-brand" href="../index.html"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a><p>Technical notes on embedded systems.</p><div class="footer-links"><a href="../articles.html">Articles</a><a href="../projects.html">Projects</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></div><small class="copyright">© <span id="year">2026</span> LowLevel Labs</small></div></footer>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script><!-- End Cloudflare Web Analytics -->
+<script>
+document.addEventListener('DOMContentLoaded',function(){const root=document.querySelector('.asm-exercises');if(!root)return;const headings=[...root.querySelectorAll('h2,h3')];headings.forEach(h=>{if(h.textContent.startsWith('Prog ')){const nodes=[];let n=h.nextElementSibling;while(n&&!/^H[23]$/.test(n.tagName)){nodes.push(n);n=n.nextElementSibling;}const d=document.createElement('details');d.className='asm-program';const s=document.createElement('summary');s.textContent=h.textContent;d.appendChild(s);nodes.forEach(el=>d.appendChild(el));h.replaceWith(d);}});const details=[...root.querySelectorAll('details.asm-program')];document.getElementById('expandAll')?.addEventListener('click',()=>details.forEach(d=>d.open=true));document.getElementById('collapseAll')?.addEventListener('click',()=>details.forEach(d=>d.open=false));});
+</script>
 </body></html>
