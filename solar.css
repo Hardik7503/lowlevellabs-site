@@ -105,3 +105,12 @@
 @keyframes planetShine{0%{filter:brightness(.9) drop-shadow(0 0 10px color-mix(in srgb,var(--planet) 30%,transparent))}100%{filter:brightness(1.2) drop-shadow(0 0 20px color-mix(in srgb,var(--planet) 65%,transparent))}}
 @media(max-width:650px){.cpu-sun{width:210px;height:210px}}
 @media(prefers-reduced-motion:reduce){.solar-hero:before,.solar-starfield,.cpu-sun svg,.cpu-glow,.cpu-heartbeat,.cpu-pulse-ring,.cpu-pins,.planet,.orbit{animation:none!important}}
+
+/* Reference-inspired full-bleed cinematic composition. The exact supplied raster
+   can be added later at assets/solar-reference.webp without any further CSS changes. */
+.solar-hero{min-height:calc(100svh - 72px);background-color:#030519;background-image:linear-gradient(90deg,#03051bc7 0%,#03051b3b 34%,#03051b22 70%,#03051b85 100%),radial-gradient(ellipse at 49% 50%,#ff3ca84d,transparent 32%),radial-gradient(ellipse at 20% 80%,#9d20ff48,transparent 34%),radial-gradient(ellipse at 85% 12%,#3d3dfd4d,transparent 32%),url("assets/solar-reference.webp");background-size:cover,cover,cover,cover,cover;background-position:center;background-repeat:no-repeat}
+.solar-hero:after{opacity:.4}
+.solar-stage{filter:drop-shadow(0 0 22px #ff4f9e30)}
+.cpu-sun{filter:drop-shadow(0 0 22px #f943bf9c) drop-shadow(0 0 45px #34d8ff5a)}
+.orbit{border-width:1.5px;box-shadow:0 0 12px #39bfff24,inset 0 0 12px #ff4bd012}
+.planet-body{box-shadow:inset -13px -8px 18px #0009,inset 7px 5px 14px #ffffff66,0 0 25px color-mix(in srgb,var(--planet) 72%,transparent)}
