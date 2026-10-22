@@ -32,3 +32,17 @@
   letter-spacing: 1.35px;
   color: #6c7073;
 }
+
+/* LowLevel Labs light-mode readability refresh */
+:root{color-scheme:light;--bg:#f7f8fb;--paper:#ffffff;--ink:#172235;--muted:#596579;--line:#dfe5ee;--accent:#d95b24;--soft:#f0f4f8;--max:1160px}
+html{scroll-behavior:auto}
+body{background:var(--bg);color:var(--ink)}
+.site-header{background:rgba(255,255,255,.97);border-bottom:1px solid #dfe5ee;backdrop-filter:none}
+.brand,.brand-title,.brand-text>span{color:#172d54}
+.nav-links a{color:#34445d}
+.nav-links a:hover,.nav-links a.current{color:#c94d1a}
+.article-card,.project-card,.about-card,.contact-card{background:#fff;border-color:#dfe5ee;box-shadow:0 6px 24px #18345a08}
+.article-body p,.hero-copy,.article-content p,.article-content li{color:#435168;line-height:1.8}
+.article-content h2,.article-content h3{color:#172d54}
+.site-footer{background:#edf2f7;color:#3c4b61;border-top:1px solid #dfe5ee}
+@media(prefers-reduced-motion:no-preference){html{scroll-behavior:auto}}
