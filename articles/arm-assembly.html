@@ -30,6 +30,7 @@
 <div class="resource-actions"><a href="../assets/ARM_32bit_Assembly_Programming.pdf" target="_blank" rel="noopener">Read PDF ↗</a><a href="../assets/ARM_32bit_Assembly_Programming.pdf" download>Download PDF ↓</a></div>
 </section>
 <section class="resource-panel code-resource"><h2>ARM 32bit Assembly Exercises</h2><p>All exercises and their complete source code are included below. Expand a program to inspect its solution.</p><div class="asm-toolbar"><button type="button" id="expandAll">Expand all programs</button><button type="button" id="collapseAll">Collapse all programs</button></div><div class="asm-exercises"><h2>Program 1: Sum 1 to 5 <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Write an ARM assembly program to calculate the sum of the integers from 1 through 5 and return the result.</p>
 <p>Expected: 15</p>
 <pre class="asm-code"><code>.section .text
 .global _start
@@ -46,6 +47,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 2: Max element <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find and return its maximum element.</p>
 <p>Expected: 23</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 4, 17, 9, 23, 5
@@ -70,6 +72,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 3: Sum of all elements <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to calculate the sum of all its elements.</p>
 <p>Expected: 30</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 2, 4, 6, 8, 10
@@ -93,6 +96,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 4: Sum elements divisible by 3 <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to add only the elements that are divisible by 3.</p>
 <p>Expected: 24. Requires an ARM CPU supporting <code>sdiv</code>.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 3, 5, 9, 10, 12, 14
@@ -122,6 +126,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 5: Minimum element <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array that may contain negative values, write an ARM assembly program to find its minimum element.</p>
 <p>Expected: -8 (exit status 248)</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 7, -3, 12, -8, 5
@@ -146,6 +151,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 6: Maximum absolute value <span class="fix-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array containing positive and negative values, write an ARM assembly program to find the largest absolute value among its elements.</p>
 <p>Expected: 22. The loop comparison must be <code>cmp r1, r2</code>, not <code>cmp r2, r1</code>.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 4, -15, 9, -22, 7
@@ -177,6 +183,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 7: Index of maximum value <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the index of its maximum element. Use zero-based indexing.</p>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 6, 18, 3, 25, 10
@@ -206,6 +213,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 8: Count values divisible by 4 <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to count how many elements are divisible by 4.</p>
 <p>Expected: 4</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 4, 7, 12, 16, 5, 20
@@ -232,6 +240,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 9: Index of first even element <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the zero-based index of the first even element. Return -1 if no even element exists.</p>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 7, 9, 5, 12, 3, 8
@@ -259,6 +268,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 10: Last index of element greater than 10 <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the zero-based index of the last element greater than 10. Return -1 if no such element exists.</p>
 <p>Expected: 5</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 4, 7, 3, 15, 8, 20
@@ -285,6 +295,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 11: Count negative numbers <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to count the number of negative elements.</p>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, -3, 12, -7, 9, -1
@@ -311,6 +322,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 12: Smallest negative number <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the smallest (most negative) negative element. Return 0 if the array contains no negative values.</p>
 <p>Expected: -7 (exit status 249)</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, -3, 12, -7, 9, -1
@@ -339,6 +351,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 13: Index of smallest negative number <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the zero-based index of the smallest negative element. Return -1 if no negative element exists.</p>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, -3, 12, -7, 9, -1
@@ -372,6 +385,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 14: Sum of even numbers <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to calculate the sum of all even elements, including negative even values.</p>
 <p>Expected: 24</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, -3, 12, -7, 9, -1, 8, 4
@@ -398,6 +412,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 15: Count multiples of 8 <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to count the elements that are multiples of 8.</p>
 <p>Expected: 4</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 5, 8, 12, 16, 24, 7, 32
@@ -424,6 +439,7 @@ exit:
     mov r7, #1
     svc #0</code></pre>
 <h2>Program 16: Structure, set READY bit <span class="fix-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Given a structure in memory with an ID field, a value field, and a status field, write an ARM assembly routine that sets bit 0 (READY) in the status field without changing the other status bits.</p>
 <p>Expected: 1. Fixed <code>.global _start</code> spacing and <code>pop {lr}</code>.</p>
 <pre class="asm-code"><code>.section .data
 device:
@@ -447,6 +463,7 @@ set_ready:
     pop {lr}
     bx lr</code></pre>
 <h2>Program 17: Function sum_array <span class="fix-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Write an ARM assembly function named sum_array that accepts an array address and its length, then returns the sum of all array elements.</p>
 <p>Expected: 100. Fixed array addressing to use loop index <code>r4</code>.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 10, 20, 30, 40
@@ -476,6 +493,7 @@ done:
     pop {r4-r6, lr}
     bx lr</code></pre>
 <h2>Program 18: Function max_array <span class="fix-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Write an ARM assembly function named max_array that accepts an array address and its length, then returns the maximum element.</p>
 <p>Expected: 99. Fixed invalid <code>mov r5, [r0]</code> to <code>ldr r5, [r0]</code> and corrected the max update direction.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 10, 55, 23, 99, 41
@@ -508,6 +526,7 @@ done:
     pop {r4-r6, lr}
     bx lr</code></pre>
 <h2>Program 19: Function min_max <span class="ok-mark"></span></h2>
+<p class="program-question"><strong>Question:</strong> Write an ARM assembly function named min_max that accepts an array address and its length, then returns the minimum element in r0 and the maximum element in r1.</p>
 <p>Expected: min = 3 (r0), max = 88 (r1). The exit code displays the low 8 bits of r0.</p>
 <pre class="asm-code"><code>.section .data
 nums: .word 42, 7, 19, 3, 88, 25
