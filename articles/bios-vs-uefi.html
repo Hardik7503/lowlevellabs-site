@@ -2,17 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BIOS vs. UEFI: What’s the Difference? | LowLevel Labs</title>
-<meta name="description" content="Understand the differences between legacy BIOS and UEFI firmware, boot flow, partitioning, Secure Boot, and practical system implications.">
+<title>BIOS vs. UEFI: What&#x27;s the Difference? | LowLevel Labs</title>
+<meta name="description" content="A clear explanation of legacy BIOS and UEFI firmware: what each does at power-on, how they find and start a bootloader, the EFI System Partition, boot entries and Secure Boot.">
 <link rel="canonical" href="https://lowlevellabs.in/articles/bios-vs-uefi.html">
-<meta property="og:title" content="BIOS vs. UEFI: What’s the Difference?"><meta property="og:description" content="Understand the differences between legacy BIOS and UEFI firmware, boot flow, partitioning, Secure Boot, and practical system implications.">
+<meta property="og:title" content="BIOS vs. UEFI: What&#x27;s the Difference?"><meta property="og:description" content="A clear explanation of legacy BIOS and UEFI firmware: what each does at power-on, how they find and start a bootloader, the EFI System Partition, boot entries and Secure Boot.">
 <meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/bios-vs-uefi.html">
 <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../styles.css?v=20261120">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BIOS vs. UEFI: What\u2019s the Difference?", "description": "Understand the differences between legacy BIOS and UEFI firmware, boot flow, partitioning, Secure Boot, and practical system implications.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BIOS vs. UEFI: What's the Difference?", "description": "A clear explanation of legacy BIOS and UEFI firmware: what each does at power-on, how they find and start a bootloader, the EFI System Partition, boot entries and Secure Boot.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -25,46 +25,126 @@
 <main id="main">
 <header class="article-head"><div class="wrap">
 <div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/boot.html">Boot & platform</a></div>
-<h1>BIOS vs. UEFI: What’s the Difference?</h1>
-<p class="lede">Both initialize the platform and start the boot process, but UEFI provides a more modern firmware interface and boot architecture.</p>
-<div class="byline"><span>4 min read</span><span>22 Oct 2026</span></div>
+<h1>BIOS vs. UEFI: What&#x27;s the Difference?</h1>
+<p class="lede">When you press the power button, the CPU knows nothing about disks, files or operating systems. Firmware bridges that gap. BIOS is the original way PCs did it; UEFI is the modern replacement.</p>
+<div class="byline"><span>10 min read</span><span>22 Oct 2026</span> <span>Updated 20 Nov 2026</span></div>
 </div></header>
-<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#first-what-are-they">First, what are they?</a></li><li><a href="#bios-vs-uefi-at-a-glance">BIOS vs UEFI at a glance</a></li><li><a href="#how-the-boot-flow-differs">How the boot flow differs</a></li><li><a href="#what-is-the-efi-system-partition">What is the EFI System Partition?</a></li><li><a href="#where-does-secure-boot-fit">Where does Secure Boot fit?</a></li><li><a href="#can-a-uefi-system-still-boot-in-legacy-mode">Can a UEFI system still boot in legacy mode?</a></li><li><a href="#how-to-check-which-mode-your-system-used">How to check which mode your system used</a></li><li><a href="#which-should-you-choose">Which should you choose?</a></li><li><a href="#key-takeaway">Key takeaway</a></li></ol></aside>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#the-problem-firmware-solves">The problem firmware solves</a></li><li><a href="#what-bios-is">What BIOS is</a></li><li><a href="#what-uefi-is">What UEFI is</a></li><li><a href="#side-by-side-comparison">Side-by-side comparison</a></li><li><a href="#the-efi-system-partition">The EFI System Partition</a></li><li><a href="#boot-entries-live-in-nvram">Boot entries live in NVRAM</a></li><li><a href="#secure-boot-in-one-paragraph">Secure Boot in one paragraph</a></li><li><a href="#inside-uefi-the-phases">Inside UEFI: the phases</a></li><li><a href="#csm-uefi-pretending-to-be-bios">CSM: UEFI pretending to be BIOS</a></li><li><a href="#common-misconceptions">Common misconceptions</a></li></ol></aside>
 <article class="prose">
-<h2 id="first-what-are-they">First, what are they?</h2>
-<p><strong>BIOS</strong> (Basic Input/Output System) is the traditional PC firmware interface used to initialize hardware and begin loading an operating system. In everyday usage, “BIOS” often means the firmware setup screen, even on modern systems.</p>
-<p><strong>UEFI</strong> (Unified Extensible Firmware Interface) is the modern firmware interface that replaced the legacy PC BIOS boot model on most contemporary computers. UEFI defines services and data structures that firmware and a bootloader or operating system can use before the OS takes over.</p>
-<h2 id="bios-vs-uefi-at-a-glance">BIOS vs UEFI at a glance</h2>
-<table><thead><tr><th>Feature</th><th>Legacy BIOS</th><th>UEFI</th></tr></thead><tbody>
-<tr><td>Boot model</td><td>Runs legacy boot code from a boot sector</td><td>Can launch EFI applications, commonly a boot manager or OS bootloader</td></tr>
-<tr><td>Partitioning commonly used</td><td>Usually MBR</td><td>Usually GPT; UEFI can support other arrangements depending on implementation</td></tr>
-<tr><td>Disk-size implications</td><td>Traditional MBR layouts have practical limits, including about 2 TiB with 512-byte sectors</td><td>GPT supports much larger disks and more partitions</td></tr>
-<tr><td>Pre-boot environment</td><td>Traditional 16-bit real-mode interface and services</td><td>Defined firmware services with processor-mode and architecture support suited to the platform</td></tr>
-<tr><td>Boot files</td><td>Boot code is typically loaded from a disk boot sector</td><td>Boot applications are stored as files, usually on a FAT-formatted EFI System Partition (ESP)</td></tr>
-<tr><td>Security</td><td>No standard Secure Boot mechanism in the legacy BIOS model</td><td>Can support Secure Boot to verify trusted boot components</td></tr>
-<tr><td>Extensibility</td><td>More constrained legacy interface</td><td>Standardized services, drivers, boot manager, and runtime services</td></tr>
-</tbody></table>
-<p><em>Note:</em> These are typical configurations, not absolute rules. Firmware vendors and compatibility modes can change the details. UEFI does not automatically mean faster boot, and Secure Boot is an optional feature that must be supported and configured.</p>
-<h2 id="how-the-boot-flow-differs">How the boot flow differs</h2>
-<h3>Typical legacy BIOS boot</h3>
-<ol><li>The CPU begins execution at the platform's reset vector and enters firmware initialization.</li><li>Firmware performs platform initialization and POST-style checks.</li><li>Firmware selects a boot device and loads code from its boot sector.</li><li>The boot code loads the next-stage bootloader, which eventually loads the operating system kernel.</li></ol>
-<h3>Typical UEFI boot</h3>
-<ol><li>The CPU begins at the platform reset vector and firmware initializes the platform.</li><li>UEFI firmware discovers boot options and available devices.</li><li>The firmware's boot manager launches a selected EFI executable, often from the EFI System Partition.</li><li>The bootloader loads the kernel and supporting data, then transfers control to the operating system.</li></ol>
-<p>Both paths ultimately hand control to an operating-system loader or kernel. The main difference is the firmware-to-bootloader interface and how boot components are located and launched.</p>
-<h2 id="what-is-the-efi-system-partition">What is the EFI System Partition?</h2>
-<p>The <strong>EFI System Partition (ESP)</strong> is a special partition, typically formatted as FAT, that stores UEFI boot applications and related files. A boot entry can point to a particular EFI executable on this partition. For example, a Linux installation may store a GRUB EFI executable there, while Windows typically uses Windows Boot Manager.</p>
-<h2 id="where-does-secure-boot-fit">Where does Secure Boot fit?</h2>
-<p>Secure Boot is a UEFI feature that helps verify signatures of boot components against firmware-managed trust databases before launching them. It can help prevent unauthorized boot code from running, but it is not the same as full-disk encryption and it does not guarantee that an entire system is secure. Its behavior depends on firmware configuration, keys, and the operating system's boot chain.</p>
-<h2 id="can-a-uefi-system-still-boot-in-legacy-mode">Can a UEFI system still boot in legacy mode?</h2>
-<p>Some UEFI implementations include a Compatibility Support Module (CSM), which can provide a legacy BIOS-style boot path. When enabled, this may allow older operating systems or boot media to start using legacy methods. Many newer systems omit CSM, so check the platform's firmware settings and documentation rather than assuming it is available.</p>
-<h2 id="how-to-check-which-mode-your-system-used">How to check which mode your system used</h2>
-<ul><li><strong>Linux:</strong> If <code>/sys/firmware/efi</code> exists after boot, Linux was booted through UEFI. If it is absent, the system may have booted in legacy mode.</li><li><strong>Windows:</strong> Open System Information (<code>msinfo32</code>) and check the <em>BIOS Mode</em> field, which commonly reports UEFI or Legacy.</li></ul>
-<h2 id="which-should-you-choose">Which should you choose?</h2>
-<p>For a new PC or modern embedded platform that supports UEFI, UEFI is generally the preferred approach because it offers a standardized boot manager, file-based boot applications, GPT compatibility, and optional Secure Boot. Legacy BIOS remains relevant when supporting older systems, operating systems, or boot media.</p>
-<p>For embedded developers, remember that the exact boot architecture depends on the SoC and board. Many embedded boards use other firmware stages or boot ROM flows—for example, Boot ROM → SPL/TF-A/U-Boot → Linux—rather than a PC-style BIOS. UEFI can also be used in embedded and server platforms, but it is not universal.</p>
-<h2 id="key-takeaway">Key takeaway</h2>
-<p>Legacy BIOS boots through a traditional boot-sector model; UEFI provides a more extensible firmware interface that commonly launches EFI boot applications from an EFI System Partition. Both are firmware-stage parts of the boot chain, and neither is the operating system itself.</p>
-<nav class="endmatter" aria-label="More in this topic"><a class="pn next" href="bootloader-to-kernel-handoff.html"><small>Next in Boot & platform</small><span>From Reset Vector to main(): The Bootloader-to-Kernel Handoff</span></a></nav>
+<h2 id="the-problem-firmware-solves">The problem firmware solves</h2>
+<p>An operating system lives on a disk. But right after power-on, nothing is set up to read a disk: the memory controller is not trained, RAM may not even work yet, and no driver for the storage controller exists. Something has to run first, from a chip on the motherboard, and get the machine far enough along to load the next piece of software.</p>
+<p>That something is the <strong>firmware</strong>. Its job, in one sentence: <em>initialize the hardware, find a bootloader, and hand over control.</em> BIOS and UEFI are two different designs for doing that job.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 120" role="img" aria-label="Boot chain: power on, firmware, bootloader, operating system kernel">
+<rect class="b" x="10" y="36" width="110" height="48" rx="6"/><text class="h" x="30" y="65">Power on</text>
+<path class="ln" d="M120 60h30"/><path class="fg" d="M150 60l-8-4v8z"/>
+<rect class="cu" x="150" y="26" width="160" height="68" rx="6"/><text class="h" x="166" y="52">Firmware</text><text class="s" x="166" y="74">BIOS or UEFI, in flash</text>
+<path class="ln" d="M310 60h30"/><path class="fg" d="M340 60l-8-4v8z"/>
+<rect class="sg" x="340" y="26" width="160" height="68" rx="6"/><text class="h" x="356" y="52">Bootloader</text><text class="s" x="356" y="74">GRUB, Windows Boot Mgr</text>
+<path class="ln" d="M500 60h30"/><path class="fg" d="M530 60l-8-4v8z"/>
+<rect class="ink" x="530" y="26" width="140" height="68" rx="6"/><text class="h" x="546" y="52">OS kernel</text><text class="s" x="546" y="74">Linux, Windows</text>
+</svg><figcaption>Every PC boot follows this chain. BIOS and UEFI differ in the second box, and in how it finds the third.</figcaption></figure>
+
+<h2 id="what-bios-is">What BIOS is</h2>
+<p>The <strong>BIOS</strong> (Basic Input/Output System) dates from the original IBM PC in 1981. When the CPU comes out of reset, it starts executing at a fixed address near the top of the 4 GB address space (<code>0xFFFFFFF0</code> on x86), which the chipset maps to the firmware flash chip. From there the BIOS:</p>
+<ol>
+<li>Runs the <strong>POST</strong> (Power-On Self-Test) and initializes the CPU, memory and basic devices.</li>
+<li>Walks its <strong>boot order</strong> list: first disk, USB stick, network and so on.</li>
+<li>Reads the <strong>first 512-byte sector</strong> of the chosen disk into memory at address <code>0x7C00</code>.</li>
+<li>Checks that the last two bytes are the signature <code>0x55 0xAA</code>, and if so, jumps to it.</li>
+</ol>
+<p>That's it. The BIOS does not understand partitions or filesystems. It trusts that whatever is in sector 0 knows what to do next. The CPU is still in 16-bit <strong>real mode</strong>, the mode of the original 8086, with access to only about 1 MB of memory. The tiny boot code calls BIOS "interrupt" services such as <code>INT 13h</code> to read more disk sectors.</p>
+
+<h2 id="what-uefi-is">What UEFI is</h2>
+<p><strong>UEFI</strong> (Unified Extensible Firmware Interface) is a specification, not a single program. It defines how firmware and operating systems talk to each other before the OS is running. Intel started it as EFI in the late 1990s for Itanium; today almost every PC, most servers and many Arm systems use it.</p>
+<p>The key difference: UEFI firmware <strong>understands filesystems and runs programs</strong>. Instead of blindly executing sector 0, it reads its list of boot entries, opens a FAT-formatted partition on the disk, finds a file such as <code>\EFI\ubuntu\shimx64.efi</code>, loads it as a program, and calls it. That program is the bootloader.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 300" role="img" aria-label="Side-by-side boot flows: BIOS loads sector 0 and jumps; UEFI reads boot entries, opens the EFI System Partition, and runs an EFI application">
+<text class="h" x="20" y="22">Legacy BIOS</text><text class="h" x="360" y="22">UEFI</text>
+<g transform="translate(20,36)">
+<rect class="b" x="0" y="0" width="300" height="38" rx="5"/><text x="12" y="24">POST, initialize hardware</text>
+<rect class="b" x="0" y="54" width="300" height="38" rx="5"/><text x="12" y="78">Pick disk from boot order</text>
+<rect class="cu" x="0" y="108" width="300" height="38" rx="5"/><text x="12" y="132">Load sector 0 → 0x7C00</text>
+<rect class="cu" x="0" y="162" width="300" height="38" rx="5"/><text x="12" y="186">Check 0x55AA, jump (16-bit mode)</text>
+<rect class="ink" x="0" y="216" width="300" height="38" rx="5"/><text x="12" y="240">Bootloader stage 1 → stage 2 → OS</text>
+<path class="ln" d="M150 38v16M150 92v16M150 146v16M150 200v16"/>
+</g>
+<g transform="translate(360,36)">
+<rect class="b" x="0" y="0" width="300" height="38" rx="5"/><text x="12" y="24">Initialize hardware (SEC, PEI, DXE)</text>
+<rect class="b" x="0" y="54" width="300" height="38" rx="5"/><text x="12" y="78">Read BootOrder from NVRAM</text>
+<rect class="sg" x="0" y="108" width="300" height="38" rx="5"/><text x="12" y="132">Open EFI System Partition (FAT)</text>
+<rect class="sg" x="0" y="162" width="300" height="38" rx="5"/><text x="12" y="186">Verify (Secure Boot), run .efi file</text>
+<rect class="ink" x="0" y="216" width="300" height="38" rx="5"/><text x="12" y="240">Bootloader → OS (64-bit mode)</text>
+<path class="ln" d="M150 38v16M150 92v16M150 146v16M150 200v16"/>
+</g>
+</svg><figcaption>BIOS executes raw code from a fixed sector. UEFI reads a configured file path from a filesystem and runs it as a program.</figcaption></figure>
+
+<h2 id="side-by-side-comparison">Side-by-side comparison</h2>
+<table>
+<thead><tr><th></th><th>Legacy BIOS</th><th>UEFI</th></tr></thead>
+<tbody>
+<tr><td>How it finds the bootloader</td><td>Runs whatever is in the disk's first sector</td><td>Runs a named <code>.efi</code> file from a boot entry</td></tr>
+<tr><td>Partition table it normally uses</td><td>MBR</td><td>GPT (see <a href="mbr-vs-gpt-bootloader.html">MBR vs GPT</a>)</td></tr>
+<tr><td>Largest bootable disk</td><td>2 TiB with 512-byte sectors (MBR limit)</td><td>Practically unlimited (GPT uses 64-bit addresses)</td></tr>
+<tr><td>CPU mode handed to the bootloader</td><td>16-bit real mode</td><td>32- or 64-bit mode matching the firmware</td></tr>
+<tr><td>Boot configuration stored in</td><td>Firmware setup, boot order only</td><td>NVRAM variables (<code>Boot0001</code>, <code>BootOrder</code>)</td></tr>
+<tr><td>Verified boot</td><td>No standard mechanism</td><td>Secure Boot</td></tr>
+<tr><td>Services after OS starts</td><td>None used by modern OSes</td><td>Runtime services: variables, real-time clock, reset</td></tr>
+<tr><td>Extensibility</td><td>Option ROMs in 16-bit code</td><td>Drivers and applications in a standard format (PE/COFF)</td></tr>
+</tbody>
+</table>
+
+<h2 id="the-efi-system-partition">The EFI System Partition</h2>
+<p>UEFI needs somewhere to keep bootloaders as files. That place is the <strong>EFI System Partition (ESP)</strong>: a small partition, usually 100 to 500 MB, formatted as FAT32 and marked with a special type identifier. A typical dual-boot ESP looks like this:</p>
+<pre><code class="language-text">EFI/
+├── BOOT/
+│   └── BOOTX64.EFI          ← fallback path, used for USB sticks and fresh disks
+├── Microsoft/Boot/
+│   └── bootmgfw.efi         ← Windows Boot Manager
+└── ubuntu/
+    ├── shimx64.efi          ← signed first stage for Secure Boot
+    └── grubx64.efi          ← GRUB</code></pre>
+<p>The <code>\EFI\BOOT\BOOTX64.EFI</code> path (<code>BOOTAA64.EFI</code> on 64-bit Arm) is special: if no boot entry applies, firmware tries it on removable media. That is how an installer USB boots on any UEFI machine without configuration.</p>
+
+<h2 id="boot-entries-live-in-nvram">Boot entries live in NVRAM</h2>
+<p>UEFI stores boot configuration as variables in flash on the motherboard. Each <code>Boot####</code> variable says "this disk, this partition, this file". <code>BootOrder</code> lists them in priority order. On Linux you can see them with <code>efibootmgr</code>:</p>
+<pre><code class="language-bash">$ efibootmgr
+BootCurrent: 0001
+BootOrder: 0001,0000,0002
+Boot0000* Windows Boot Manager  HD(1,GPT,...)/File(\EFI\Microsoft\Boot\bootmgfw.efi)
+Boot0001* ubuntu                HD(1,GPT,...)/File(\EFI\ubuntu\shimx64.efi)
+Boot0002* UEFI: USB Drive       PciRoot(0x0)/Pci(0x14,0x0)/USB(...)</code></pre>
+<p>This explains a common surprise: replacing a disk or resetting the firmware can remove the entry while the files are still on the ESP. The fix is to recreate the entry, not reinstall the OS.</p>
+
+<h2 id="secure-boot-in-one-paragraph">Secure Boot in one paragraph</h2>
+<p>With Secure Boot enabled, UEFI checks the digital signature of every <code>.efi</code> file before running it. The firmware holds a database of trusted keys (<code>db</code>) and a list of revoked ones (<code>dbx</code>). A bootloader signed by a trusted key runs; anything else is refused. Linux distributions use a small program called <strong>shim</strong>, signed by Microsoft's key, which then verifies GRUB and the kernel with the distribution's own key. This chain prevents malware from inserting itself before the OS starts.</p>
+
+<h2 id="inside-uefi-the-phases">Inside UEFI: the phases</h2>
+<p>You rarely need these names, but they show up in firmware logs and debugging:</p>
+<table>
+<thead><tr><th>Phase</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td>SEC (Security)</td><td>First code after reset. Uses CPU cache as temporary RAM because DRAM is not ready.</td></tr>
+<tr><td>PEI (Pre-EFI Initialization)</td><td>Initializes and trains the memory controller so DRAM works.</td></tr>
+<tr><td>DXE (Driver Execution Environment)</td><td>Loads drivers for PCIe, USB, storage, graphics and network.</td></tr>
+<tr><td>BDS (Boot Device Selection)</td><td>Reads boot entries and launches the bootloader.</td></tr>
+<tr><td>RT (Runtime)</td><td>After the OS calls <code>ExitBootServices()</code>, only runtime services remain.</td></tr>
+</tbody>
+</table>
+
+<h2 id="csm-uefi-pretending-to-be-bios">CSM: UEFI pretending to be BIOS</h2>
+<p>Many PCs sold during the transition included a <strong>Compatibility Support Module</strong>, which lets UEFI firmware boot old MBR disks the BIOS way. Intel ended CSM support on its client platforms around 2020, so new machines are UEFI-only. If an old disk will not boot on a new PC, this is usually why.</p>
+
+<h2 id="common-misconceptions">Common misconceptions</h2>
+<ul>
+<li><strong>"The BIOS settings screen."</strong> People still say BIOS for the setup menu, even on UEFI machines. The setup screen and the boot interface are different things.</li>
+<li><strong>"UEFI is faster."</strong> UEFI can skip legacy work, but boot speed depends mostly on the vendor's firmware and what it initializes.</li>
+<li><strong>"UEFI requires GPT."</strong> Usually paired, but the specification can boot from an MBR disk with an ESP. Windows, however, requires GPT for UEFI installs.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>BIOS loads and jumps to 512 bytes from the start of a disk in 16-bit mode. UEFI initializes the platform, reads a boot entry from NVRAM, opens a FAT partition and runs a bootloader file, optionally verifying its signature. Both end the same way: a bootloader loads the OS kernel.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn next" href="mbr-vs-gpt-bootloader.html"><small>Next in Boot & platform</small><span>MBR vs. GPT: How Does a Bootloader Get Started?</span></a></nav>
 </article></div>
 </main>
 <footer class="foot"><div class="wrap">

@@ -1,15 +1,132 @@
 <!--meta
 title: Device Tree: How Linux Describes Hardware
-description: Connect compatible strings, resources, and driver matching in an embedded Linux system.
+description: What a Device Tree is, how to read a DTS node, how compatible strings bind hardware to drivers, how reg, interrupts and clocks reach probe(), and how to debug a device that never binds.
 topic: drivers
 date: 2026-10-22
-read: 3 min read
-lede: Device Tree separates a board's hardware description from much of the driver code. It tells Linux which devices exist, where their registers are, and which resources they need.
+updated: 2026-11-20
+read: 11 min read
+order: 10
+lede: A PC can ask its hardware what is connected. Most embedded SoCs cannot. The Device Tree is the file that tells the kernel what hardware exists on this board and where to find it, so one kernel binary can run on many boards.
 -->
+<h2>The problem it solves</h2>
+<p>On a PC, buses like PCIe and USB are <strong>discoverable</strong>: the kernel scans them and each device reports its vendor and device ID. But the UART, I²C controller, GPIO block and timers inside an Arm SoC sit at fixed addresses on an internal bus with no way to ask "what are you?".</p>
+<p>Before the Device Tree, Arm Linux had a C file per board listing every device by hand. Each board needed its own kernel build. The Device Tree moved that description out of the kernel into data:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 200" role="img" aria-label="Device Tree flow: board.dts source compiled by dtc into board.dtb binary, loaded by the bootloader, parsed by the kernel into devices that match drivers">
+<rect class="b" x="10" y="60" width="120" height="70" rx="6"/><text class="h" x="26" y="88">board.dts</text><text class="s" x="26" y="108">text source</text>
+<path class="ln" d="M130 95h40"/><text class="m s" x="138" y="86">dtc</text>
+<rect class="cu" x="170" y="60" width="120" height="70" rx="6"/><text class="h" x="186" y="88">board.dtb</text><text class="s" x="186" y="108">binary blob</text>
+<path class="ln" d="M290 95h40"/>
+<rect class="sg" x="330" y="60" width="140" height="70" rx="6"/><text class="h" x="346" y="88">Bootloader</text><text class="s" x="346" y="108">passes address in x0</text>
+<path class="ln" d="M470 95h40"/>
+<rect class="ink" x="510" y="40" width="160" height="110" rx="6"/><text class="h" x="526" y="66">Kernel</text><text class="s" x="526" y="88">parses tree,</text><text class="s" x="526" y="106">creates devices,</text><text class="s" x="526" y="124">matches drivers</text>
+</svg><figcaption>The DTS is compiled to a DTB, handed over by the bootloader, and turned into devices by the kernel. The same kernel image can boot any board with the right DTB.</figcaption></figure>
 
-<h2>Why Device Tree exists</h2><p>Embedded boards may share a processor family but differ in attached peripherals, memory maps, clocks, GPIO wiring, and interrupts. Device Tree represents those differences as data rather than hard-coding every board variation into a driver.</p><h2>A small example</h2><pre><code>sensor@48 {
-    compatible = "acme,example-sensor";
-    reg = &lt;0x48&gt;;
-    status = "okay";
-};</code></pre><p>This is illustrative only: the node belongs under the correct bus controller, and the meaning of <code>reg</code> depends on that bus's address and size cells. For I²C, the address is typically a bus address, not a CPU physical register address.</p><h2>From DTS to probe()</h2><ol><li>A board description is compiled from DTS into a DTB.</li><li>The bootloader passes the DTB to the kernel.</li><li>The kernel creates device objects from enabled nodes.</li><li>A driver's <code>of_match_table</code> matches the node's <code>compatible</code> string.</li><li>The driver core calls <code>probe()</code> when matching and dependencies permit it.</li></ol><h2>Resources and dependencies</h2><p>Drivers should retrieve resources through subsystem APIs rather than parsing arbitrary properties manually. Clocks, regulators, resets, GPIOs, and interrupts may be described as dependencies. Deferred probing can occur when a required provider is not ready yet.</p><h2>Debugging checklist</h2><ul><li>Confirm the running DTB is the one you edited.</li><li>Check that the node has <code>status = "okay"</code> or no disabled status.</li><li>Verify bus address, interrupt polarity, pin muxing, and clock references against the schematic and SoC manual.</li><li>Inspect <code>/proc/device-tree</code>, kernel logs, and the driver's match table.</li><li>Validate bindings with the kernel's Device Tree schema tools when available.</li></ul><h2>Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
+<h2>Reading a DTS node</h2>
+<p>The Device Tree is a tree of <strong>nodes</strong>, each describing one device or bus, with <strong>properties</strong> as name/value pairs. Here is an I²C controller with a temperature sensor attached:</p>
+```dts
+/ {
+    soc {
+        #address-cells = <1>;
+        #size-cells = <1>;
 
+        i2c1: i2c@40005400 {                     /* node name @ unit address        */
+            compatible = "st,stm32f7-i2c";      /* which driver handles this        */
+            reg = <0x40005400 0x400>;           /* register base and size           */
+            interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&rcc I2C1_CK>;            /* phandle reference to clock node  */
+            #address-cells = <1>;
+            #size-cells = <0>;
+            status = "okay";                    /* "disabled" = ignore this node     */
+
+            temp@48 {                           /* child: device on the I2C bus      */
+                compatible = "ti,tmp102";
+                reg = <0x48>;                   /* here: 7-bit I2C address           */
+            };
+        };
+    };
+};
+```
+<table>
+<thead><tr><th>Property</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>compatible</code></td><td>"vendor,device" strings, most specific first. The key used to find a driver.</td></tr>
+<tr><td><code>reg</code></td><td>Address and size. On a memory-mapped bus, the register window; on I²C, the device address; on SPI, the chip select.</td></tr>
+<tr><td><code>interrupts</code></td><td>Which interrupt line, in the format the parent interrupt controller defines.</td></tr>
+<tr><td><code>clocks</code>, <code>resets</code>, <code>*-gpios</code>, <code>*-supply</code></td><td>References (<strong>phandles</strong>) to other nodes that provide those resources.</td></tr>
+<tr><td><code>status</code></td><td><code>"okay"</code> to use the device. SoC files often disable peripherals; board files enable the ones wired up.</td></tr>
+<tr><td><code>#address-cells</code>, <code>#size-cells</code></td><td>How many 32-bit numbers children use for address and size in their <code>reg</code>.</td></tr>
+</tbody>
+</table>
+<p>A board <code>.dts</code> usually <code>#include</code>s the SoC's <code>.dtsi</code> and overrides only what differs, typically setting <code>status = "okay"</code> and adding child devices.</p>
+
+<h2>How a node becomes a bound driver</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 270" role="img" aria-label="Matching: DT node compatible st,stm32f7-i2c is compared with the driver's of_match_table; on match the driver core calls probe with resources from reg, interrupts and clocks">
+<rect class="cu" x="20" y="20" width="270" height="110" rx="8"/><text class="h" x="36" y="44">DT node</text>
+<text class="m s" x="36" y="70">compatible = "st,stm32f7-i2c"</text><text class="m s" x="36" y="92">reg = &lt;0x40005400 0x400&gt;</text><text class="m s" x="36" y="114">interrupts = &lt;… 31 …&gt;</text>
+<rect class="sg" x="390" y="20" width="270" height="110" rx="8"/><text class="h" x="406" y="44">Driver</text>
+<text class="m s" x="406" y="70">of_match_table:</text><text class="m s" x="406" y="92">  "st,stm32f7-i2c"  ✓</text><text class="m s" x="406" y="114">  "st,stm32f4-i2c"</text>
+<path class="lc" d="M290 75h100"/><text class="s tc h" x="300" y="66">strings match</text>
+<rect class="ink" x="150" y="170" width="380" height="80" rx="8"/><text class="h" x="166" y="196">driver core calls probe(pdev)</text>
+<text class="m s" x="166" y="220">platform_get_resource()  → reg</text><text class="m s" x="166" y="240">platform_get_irq()       → interrupts</text>
+<path class="ln" d="M155 130v40M525 130v40"/>
+</svg><figcaption>Binding: the kernel creates a device from the node, the driver core compares <code>compatible</code> strings, and on a match calls the driver's <code>probe()</code> with the node's resources.</figcaption></figure>
+```c
+static const struct of_device_id stm32_i2c_match[] = {
+    { .compatible = "st,stm32f7-i2c", .data = &stm32f7_setup },
+    { /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, stm32_i2c_match);     /* lets udev autoload the module */
+
+static int stm32_i2c_probe(struct platform_device *pdev)
+{
+    struct device *dev = &pdev->dev;
+    void __iomem *base = devm_platform_ioremap_resource(pdev, 0);   /* from reg */
+    int irq = platform_get_irq(pdev, 0);                            /* from interrupts */
+    struct clk *clk = devm_clk_get(dev, NULL);                      /* from clocks */
+    u32 freq = 100000;
+
+    if (IS_ERR(base)) return PTR_ERR(base);
+    if (irq < 0)      return irq;
+    if (IS_ERR(clk))  return PTR_ERR(clk);
+    of_property_read_u32(dev->of_node, "clock-frequency", &freq);   /* optional */
+    /* ... */
+    return 0;
+}
+
+static struct platform_driver stm32_i2c_driver = {
+    .probe  = stm32_i2c_probe,
+    .driver = { .name = "stm32f7-i2c", .of_match_table = stm32_i2c_match },
+};
+module_platform_driver(stm32_i2c_driver);
+```
+<p>The driver never contains an address. Everything board-specific comes from the tree, so the same driver serves every board using that SoC.</p>
+
+<h2>Bindings: the contract</h2>
+<p>Which properties a node must have is defined by a <strong>binding</strong>, a YAML schema in the kernel's <code>Documentation/devicetree/bindings/</code>. Before writing a node, read the binding for its <code>compatible</code>. Validate your tree with:</p>
+```bash
+make ARCH=arm64 dtbs_check          # checks DTS files against the YAML bindings
+```
+
+<h2>Inspecting the live tree</h2>
+<p>The kernel exposes the tree it booted with, which is what actually matters (bootloaders often modify the DTB):</p>
+```bash
+ls /proc/device-tree/soc/                         # same as /sys/firmware/devicetree/base
+dtc -I fs -O dts /proc/device-tree > live.dts     # decompile the running tree
+cat /sys/bus/platform/devices/40005400.i2c/of_node/compatible
+ls -l /sys/bus/platform/devices/40005400.i2c/driver   # which driver bound, if any
+```
+
+<h2>When a device never probes</h2>
+<ol>
+<li><strong>Is the node there and enabled?</strong> Check the live tree, not your source file. <code>status = "disabled"</code> in an included <code>.dtsi</code> is the most common cause.</li>
+<li><strong>Does the compatible string match exactly?</strong> One character off and nothing binds, silently.</li>
+<li><strong>Is the driver built?</strong> Check the Kconfig option and <code>lsmod</code> or <code>/sys/bus/platform/drivers/</code>.</li>
+<li><strong>Is it deferred?</strong> If a clock, regulator or GPIO provider is not ready, probe returns <code>-EPROBE_DEFER</code> and is retried later. <code>cat /sys/kernel/debug/devices_deferred</code> lists waiting devices and why.</li>
+<li><strong>Did probe fail?</strong> Look for the driver's error in <code>dmesg</code>; add <code>dyndbg</code> or temporary <code>dev_err()</code> messages along the probe path.</li>
+</ol>
+
+<h2>Overlays</h2>
+<p>Add-on boards (Raspberry Pi HATs, BeagleBone capes, FPGA bitstreams) use <strong>Device Tree overlays</strong>: small fragments applied on top of the base DTB by the bootloader, so the base tree does not need editing for every accessory.</p>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>The Device Tree describes non-discoverable hardware as data. Each node's <code>compatible</code> selects a driver, <code>reg</code>, <code>interrupts</code> and phandles supply its resources, and <code>status</code> turns it on. Drivers read those resources in <code>probe()</code> and contain no board-specific addresses.</p></div>

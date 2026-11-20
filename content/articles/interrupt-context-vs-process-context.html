@@ -1,11 +1,94 @@
 <!--meta
 title: Linux Kernel Contexts: Process, Softirq, and Hard IRQ
-description: Know what can sleep, what must stay short, and how to defer work safely.
+description: The three execution contexts in the Linux kernel, what each can and cannot do, why interrupt handlers must be short, and how to split work with threaded IRQs, workqueues and tasklets.
 topic: drivers
 date: 2026-10-22
-read: 3 min read
-lede: Many kernel bugs come from running a valid operation in the wrong execution context. The same function may be safe in process context but illegal in a hard interrupt handler.
+updated: 2026-11-20
+read: 10 min read
+order: 70
+lede: Kernel code doesn't just run; it runs in a context. The context decides whether the code may sleep, which locks it may take and how long it may take. Most mysterious kernel crashes in drivers are context mistakes.
 -->
+<h2>Three contexts</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 260" role="img" aria-label="Three stacked contexts with preemption arrows: hard IRQ can interrupt softirq which can interrupt process context">
+<rect class="wn" x="20" y="20" width="400" height="60" rx="6"/><text class="h" x="36" y="44">Hard IRQ context</text><text class="s" x="36" y="64">interrupt handler; local IRQs off; cannot sleep</text>
+<rect class="cu" x="20" y="98" width="400" height="60" rx="6"/><text class="h" x="36" y="122">Softirq context</text><text class="s" x="36" y="142">network RX, timers, tasklets; cannot sleep</text>
+<rect class="sg" x="20" y="176" width="400" height="60" rx="6"/><text class="h" x="36" y="200">Process context</text><text class="s" x="36" y="220">system calls, kernel threads, workqueues; may sleep</text>
+<path class="ln" d="M450 220V60"/><path class="fg" d="M450 52l-5 10h10z"/>
+<text class="s" x="466" y="120">each layer can preempt</text><text class="s" x="466" y="138">the ones below it</text>
+<text class="s" x="466" y="56">most urgent</text><text class="s" x="466" y="230">least urgent</text>
+</svg><figcaption>Higher contexts interrupt lower ones. Only process context runs on behalf of a task that the scheduler can put to sleep.</figcaption></figure>
 
-<h2>Process context</h2><p>Process context is associated with a task, such as a system call or kernel thread. Code can often sleep, wait for a mutex, and use APIs that may block, provided the surrounding locking and state rules permit it.</p><h2>Hard interrupt context</h2><p>A hard IRQ handler runs in response to an interrupt and must finish quickly. It must not sleep or call blocking operations. A common pattern is to acknowledge the interrupt, record essential state, and schedule deferred work.</p><h2>Softirq, tasklets, and workqueues</h2><p>Softirq-style bottom halves are intended for deferred work that still has atomic-context restrictions. Workqueues run in worker-thread context and can generally sleep. Threaded IRQs offer another option when the handler needs a sleepable part. The correct mechanism depends on latency, concurrency, and subsystem conventions.</p><h2>Rules of thumb</h2><ul><li>Do not take a mutex from hard IRQ context.</li><li>Do not call a potentially sleeping API from atomic context.</li><li>Use spinlocks only when appropriate for the context and critical section.</li><li>Keep hard IRQ work short; defer expensive processing.</li><li>Check whether an API is IRQ-safe in the target kernel documentation.</li></ul><h2>How to debug context errors</h2><p>Warnings such as “sleeping function called from invalid context” often point to a blocking call under a spinlock or from an interrupt handler. Enable relevant kernel debugging options, read the complete stack trace, and identify the first driver frame that violates the context rules.</p><h2>Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
+<h3>Process context</h3>
+<p>Code running on behalf of a task: a system call such as <code>read()</code> entering your driver, a kernel thread, a workqueue item. There is a current task (<code>current</code>) the scheduler can suspend. So this code <strong>may sleep</strong>: wait for I/O, take a mutex, allocate memory with <code>GFP_KERNEL</code>, copy to and from user space.</p>
+<h3>Hard IRQ context</h3>
+<p>Your handler registered with <code>request_irq()</code>. It runs the instant the hardware interrupt arrives, on whatever CPU took it, borrowing whatever task happened to be running. Interrupts are disabled on that CPU while it runs. It <strong>must not sleep</strong>, because there is no task of its own to put to sleep and nothing to wake it.</p>
+<h3>Softirq context</h3>
+<p>Deferred work the kernel runs soon after hard interrupts return, with interrupts enabled but still without a task to sleep. The networking stack, block-layer completions, timers and tasklets run here. It <strong>must not sleep</strong> either.</p>
 
+<h2>What each context can do</h2>
+<table>
+<thead><tr><th></th><th>Process</th><th>Softirq / tasklet / timer</th><th>Hard IRQ</th></tr></thead>
+<tbody>
+<tr><td>Sleep, <code>msleep()</code>, <code>wait_event()</code></td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td><code>mutex_lock()</code></td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td><code>spin_lock()</code></td><td>Yes (see note)</td><td>Yes</td><td>Yes</td></tr>
+<tr><td><code>kmalloc(GFP_KERNEL)</code></td><td>Yes</td><td>No: use <code>GFP_ATOMIC</code></td><td>No: use <code>GFP_ATOMIC</code></td></tr>
+<tr><td><code>copy_to_user()</code></td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td>I²C / SPI transfers</td><td>Yes</td><td>No</td><td>No</td></tr>
+<tr><td><code>readl()</code>, <code>writel()</code></td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Wake a waiting task, <code>complete()</code></td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+</tbody>
+</table>
+<p>Note: a spinlock shared with an interrupt handler must be taken with <code>spin_lock_irqsave()</code> in process context. See <a href="linux-kernel-locking-spinlock-mutex.html">Spinlocks vs Mutexes</a>.</p>
+
+<h2>Why hard IRQ handlers must be short</h2>
+<ul>
+<li>While your handler runs, that CPU cannot service other interrupts (or only higher-priority ones). Every microsecond you spend adds latency to every other device.</li>
+<li>The interrupted task, which may be a real-time thread, is frozen until you return.</li>
+<li>Long handlers cause dropped packets, audio glitches and, at worst, watchdog resets.</li>
+</ul>
+<p>The standard design is the <strong>top half / bottom half</strong> split.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 160" role="img" aria-label="Top half acknowledges the interrupt and schedules work; bottom half in a thread or workqueue does the slow processing">
+<rect class="wn" x="20" y="40" width="260" height="80" rx="6"/><text class="h" x="36" y="64">Top half (hard IRQ)</text><text class="s" x="36" y="86">read status, acknowledge device,</text><text class="s" x="36" y="104">grab urgent data, schedule work</text>
+<path class="lc" d="M280 80h100"/><text class="s" x="290" y="72">microseconds</text>
+<rect class="sg" x="380" y="40" width="280" height="80" rx="6"/><text class="h" x="396" y="64">Bottom half (process ctx)</text><text class="s" x="396" y="86">parse data, talk over I²C, allocate,</text><text class="s" x="396" y="104">wake readers; may sleep</text>
+</svg><figcaption>Do the minimum in the hard handler, then hand the rest to a context where it is allowed to take time and sleep.</figcaption></figure>
+
+<h2>Bottom-half options</h2>
+<h3>Threaded IRQs (usually the best choice)</h3>
+```c
+static irqreturn_t sensor_hardirq(int irq, void *data)
+{
+    struct sensor *s = data;
+    if (!(readl(s->base + IRQ_STATUS) & DATA_READY))
+        return IRQ_NONE;                 /* not ours (shared line) */
+    writel(DATA_READY, s->base + IRQ_CLEAR);
+    return IRQ_WAKE_THREAD;              /* run sensor_thread next */
+}
+
+static irqreturn_t sensor_thread(int irq, void *data)
+{
+    struct sensor *s = data;
+    mutex_lock(&s->lock);                /* allowed: we're in a kernel thread */
+    process_samples(s);
+    mutex_unlock(&s->lock);
+    return IRQ_HANDLED;
+}
+
+ret = devm_request_threaded_irq(dev, irq, sensor_hardirq, sensor_thread,
+                                IRQF_ONESHOT, "sensor", s);
+```
+<h3>Workqueues</h3>
+<p>Queue a <code>struct work_struct</code> with <code>schedule_work()</code>; a kernel worker thread runs it later in process context. Good for work triggered from anywhere, not only interrupts, and for delayed work (<code>schedule_delayed_work()</code>).</p>
+<h3>Tasklets and softirqs</h3>
+<p>Tasklets run in softirq context: fast, but no sleeping. They are being phased out in new code in favour of threaded IRQs and workqueues. Softirqs themselves are reserved for core subsystems.</p>
+
+<h2>How to tell where you are</h2>
+<ul>
+<li><code>in_task()</code> is true in process context; <code>in_interrupt()</code> covers hard IRQ and softirq; <code>in_hardirq()</code> and <code>in_softirq()</code> are more specific.</li>
+<li>Don't use these to choose behaviour at runtime ("if atomic, use GFP_ATOMIC"); design each function for a known context and document it. Use them in assertions such as <code>might_sleep()</code>, which warns if a function that may sleep is called from atomic context.</li>
+<li>Enable <code>CONFIG_DEBUG_ATOMIC_SLEEP</code> in development: "BUG: sleeping function called from invalid context" points to the exact call.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Process context may sleep; softirq and hard IRQ contexts may not. Keep hard IRQ handlers to acknowledging the device and scheduling work, and do everything slow, sleeping or bus-related in a threaded IRQ or workqueue.</p></div>

@@ -1,11 +1,115 @@
 <!--meta
-title: MESI Cache Coherence: Why Multicore CPUs Need It
-description: Understand Modified, Exclusive, Shared, and Invalid states through a two-core example.
+title: MESI Cache Coherence Explained
+description: Why multicore CPUs need cache coherence, the four MESI states, a step-by-step two-core example, the state diagram, false sharing, and why coherence is not the same as memory ordering.
 topic: cpu
 date: 2026-10-22
-read: 3 min read
-lede: When two CPU cores cache the same memory location, each core can hold a local copy. Cache coherence protocols coordinate those copies so cores do not indefinitely operate on inconsistent values.
+updated: 2026-11-20
+read: 11 min read
+order: 30
+lede: Every core in a multicore CPU has its own cache. If two cores cache the same variable and one changes it, what does the other see? Cache coherence protocols answer that, and MESI is the classic one.
 -->
+<h2>The problem</h2>
+<p>A cache keeps copies of recently used memory close to the core, because RAM is around a hundred times slower. Caches store memory in fixed-size chunks called <strong>cache lines</strong>, typically 64 bytes.</p>
+<p>With one core, a cached copy can never be "wrong": only that core changes memory. With two cores, each with a private cache, this can happen:</p>
+<ol>
+<li>Core 0 reads <code>x = 0</code> into its cache.</li>
+<li>Core 1 reads <code>x = 0</code> into its cache.</li>
+<li>Core 0 writes <code>x = 1</code> into its own cache.</li>
+<li>Core 1 reads <code>x</code> again, hits in its cache, and still sees 0. Forever.</li>
+</ol>
+<p>A <strong>coherence protocol</strong> prevents step 4. Its rule: at any moment a line can have <em>many readers</em> or <em>one writer</em>, never both. Before a core writes, every other copy must be invalidated.</p>
 
-<h2>The four MESI states</h2><ul><li><strong>Modified (M):</strong> this cache has the only valid copy and it is dirty relative to memory.</li><li><strong>Exclusive (E):</strong> this cache has the only copy, and it is clean.</li><li><strong>Shared (S):</strong> multiple caches may hold clean copies.</li><li><strong>Invalid (I):</strong> the cache line cannot be used as a valid copy.</li></ul><h2>A two-core example</h2><p>Suppose Core 0 reads address X and no other core has it. Its line may enter Exclusive. Core 1 then reads X; the line can become Shared in both caches. If Core 0 wants to write X, it must obtain write ownership, causing other cached copies to be invalidated or otherwise transitioned according to the protocol. The exact transaction names and implementation vary by processor.</p><h2>Coherence is not the same as consistency</h2><p>Coherence concerns the order and visibility of operations to an individual memory location or cache line. Memory consistency defines which orderings of operations across locations are observable. Software still needs correct synchronization—atomics, locks, and memory-order rules—even on a coherent machine.</p><h2>Where DMA fits</h2><p>Do not assume a coherent CPU cache automatically means every DMA path is coherent. Some systems provide hardware-coherent I/O; others require OS DMA mapping and synchronization APIs. Follow the SoC and operating-system rules.</p><h2>Interview-level takeaway</h2><p>Be able to explain why a write needs exclusive ownership, how another core's copy is handled, and why coherence alone does not make a multi-step algorithm race-free. Real implementations may use MESI variants, directories, snoop filters, or other optimizations.</p><h2>Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
+<h2>The four MESI states</h2>
+<p>Each cache line in each core's cache is tagged with one of four states:</p>
+<table>
+<thead><tr><th>State</th><th>Meaning</th><th>Other caches have it?</th><th>Matches RAM?</th><th>Can write without asking?</th></tr></thead>
+<tbody>
+<tr><td><strong>M</strong>odified</td><td>I changed it; I hold the only valid copy</td><td>No</td><td>No (dirty)</td><td>Yes</td></tr>
+<tr><td><strong>E</strong>xclusive</td><td>I have the only copy and haven't changed it</td><td>No</td><td>Yes</td><td>Yes (silently becomes M)</td></tr>
+<tr><td><strong>S</strong>hared</td><td>Others may have copies too</td><td>Maybe</td><td>Yes</td><td>No: must invalidate others first</td></tr>
+<tr><td><strong>I</strong>nvalid</td><td>This slot holds nothing usable</td><td>—</td><td>—</td><td>No: must fetch first</td></tr>
+</tbody>
+</table>
+<p>The Exclusive state is the clever part. A core that reads data nobody else has can later write it without any bus traffic, which is very common for private data such as a thread's stack.</p>
 
+<h2>A two-core example, step by step</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 330" role="img" aria-label="Five steps of a two-core MESI example showing line states in core 0 and core 1 caches">
+<text class="h" x="20" y="24">Action</text><text class="h" x="400" y="24">Core 0</text><text class="h" x="520" y="24">Core 1</text>
+<g transform="translate(0,40)">
+<text x="20" y="22">1. Core 0 reads x</text><text class="s" x="20" y="40">no one else has it → Exclusive</text>
+<rect class="sg" x="400" y="4" width="90" height="30" rx="4"/><text class="m h" x="436" y="25">E</text>
+<rect class="b" x="520" y="4" width="90" height="30" rx="4"/><text class="m" x="558" y="25">I</text>
+</g>
+<g transform="translate(0,96)">
+<text x="20" y="22">2. Core 1 reads x</text><text class="s" x="20" y="40">core 0 snoops the read → both Shared</text>
+<rect class="b" x="400" y="4" width="90" height="30" rx="4"/><text class="m h" x="436" y="25">S</text>
+<rect class="b" x="520" y="4" width="90" height="30" rx="4"/><text class="m h" x="556" y="25">S</text>
+</g>
+<g transform="translate(0,152)">
+<text x="20" y="22">3. Core 0 writes x = 1</text><text class="s" x="20" y="40">sends invalidate; core 1 drops its copy</text>
+<rect class="cu" x="400" y="4" width="90" height="30" rx="4"/><text class="m h" x="436" y="25">M</text>
+<rect class="wn" x="520" y="4" width="90" height="30" rx="4"/><text class="m h" x="558" y="25">I</text>
+</g>
+<g transform="translate(0,208)">
+<text x="20" y="22">4. Core 1 reads x</text><text class="s" x="20" y="40">miss; core 0 supplies the data (and writes back)</text>
+<rect class="b" x="400" y="4" width="90" height="30" rx="4"/><text class="m h" x="436" y="25">S</text>
+<rect class="b" x="520" y="4" width="90" height="30" rx="4"/><text class="m h" x="556" y="25">S</text>
+</g>
+<g transform="translate(0,264)">
+<text x="20" y="22">5. Core 1 writes x = 2</text><text class="s" x="20" y="40">invalidates core 0's copy</text>
+<rect class="wn" x="400" y="4" width="90" height="30" rx="4"/><text class="m h" x="438" y="25">I</text>
+<rect class="cu" x="520" y="4" width="90" height="30" rx="4"/><text class="m h" x="556" y="25">M</text>
+</g>
+</svg><figcaption>Following one cache line through reads and writes on two cores. Writes always end with exactly one Modified copy.</figcaption></figure>
+<p>Notice the cost in steps 3 and 5: a write to a shared line has to wait for other cores to acknowledge the invalidation. That is why heavily shared, frequently written data is slow on multicore systems.</p>
+
+<h2>The transition table</h2>
+<p>Every state change is caused by one of four events: this core reads or writes the line (<em>local</em>), or another core reads or writes it (<em>remote</em>, seen by snooping). This table is the whole protocol:</p>
+<table>
+<thead><tr><th>Current state</th><th>Local read</th><th>Local write</th><th>Remote read</th><th>Remote write</th></tr></thead>
+<tbody>
+<tr><td><strong>M</strong></td><td>M (hit)</td><td>M (hit)</td><td>S, supply data and write back</td><td>I, supply data first</td></tr>
+<tr><td><strong>E</strong></td><td>E (hit)</td><td>M, silently: no bus traffic</td><td>S</td><td>I</td></tr>
+<tr><td><strong>S</strong></td><td>S (hit)</td><td>M, after invalidating other copies</td><td>S</td><td>I</td></tr>
+<tr><td><strong>I</strong></td><td>E if no one else has it, otherwise S</td><td>M, via read-for-ownership</td><td>I</td><td>I</td></tr>
+</tbody>
+</table>
+<p>Read the columns as rules: a local write always ends in M; a remote write always ends in I; a remote read always downgrades M and E to S.</p>
+
+<h2>How caches find out: snooping and directories</h2>
+<ul>
+<li><strong>Snooping:</strong> every cache watches (snoops) the shared bus or interconnect for other cores' requests and reacts to ones that hit its lines. Simple and fast with a few cores, but broadcast traffic grows with core count.</li>
+<li><strong>Directories:</strong> a central structure records which cores hold each line, so invalidations go only to those cores. Used in large many-core and multi-socket systems.</li>
+</ul>
+<p>Real processors use extended protocols: <strong>MOESI</strong> (AMD, many Arm systems) adds an <em>Owned</em> state so a dirty line can be shared without writing it back first, and <strong>MESIF</strong> (Intel) adds <em>Forward</em> so exactly one sharer answers requests. The core idea is unchanged.</p>
+
+<h2>False sharing: a performance trap</h2>
+<p>Coherence works on whole cache lines, not variables. If two threads write two <em>different</em> variables that happen to share a 64-byte line, the line bounces between cores on every write, even though the threads never share data.</p>
+```c
+struct counters {
+    long a;     /* written only by thread 0 */
+    long b;     /* written only by thread 1 -- same cache line as a! */
+};
+
+/* Fix: give each its own line */
+struct counters_padded {
+    _Alignas(64) long a;
+    _Alignas(64) long b;
+};
+```
+<p>False sharing can make a "parallel" loop slower than a single-threaded one. In the Linux kernel you will see <code>____cacheline_aligned_in_smp</code> on per-CPU fields for this reason.</p>
+
+<h2>Coherence is not consistency</h2>
+<p>MESI guarantees that all cores agree on the order of writes <em>to one cache line</em>. It does <strong>not</strong> guarantee the order in which a core's writes to <em>different</em> addresses become visible to others. That is the <strong>memory consistency model</strong>, and CPUs relax it for speed using store buffers and out-of-order execution.</p>
+```c
+/* core 0 */                 /* core 1 */
+data  = 42;                  while (ready == 0) { }
+ready = 1;                   use(data);          /* may still see old data on Arm */
+```
+<p>On a weakly ordered CPU like Arm or RISC-V, core 1 can see <code>ready == 1</code> before <code>data == 42</code>, on a perfectly coherent machine. The fix is a release/acquire pair (C11 <code>atomic_store_explicit(&amp;ready, 1, memory_order_release)</code> and a matching acquire load) or the kernel's <code>smp_store_release()</code>/<code>smp_load_acquire()</code>. x86 is more strongly ordered and happens to keep this particular pattern working, which is why such bugs often appear only after porting to Arm.</p>
+
+<h2>What about DMA?</h2>
+<p>Coherence protocols keep <em>CPU caches</em> consistent with each other. A DMA device may or may not take part. On many embedded SoCs it does not, so drivers must clean and invalidate caches around DMA. See <a href="dma-cache-coherency.html">DMA and Cache Coherency</a>.</p>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>MESI tags each cache line Modified, Exclusive, Shared or Invalid so that a line has either many readers or one writer. Writes to shared lines cost invalidations, unrelated data sharing a line causes false sharing, and coherence alone does not order accesses to different addresses: that needs barriers or acquire/release atomics.</p></div>

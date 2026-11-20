@@ -1,11 +1,116 @@
 <!--meta
 title: PCIe Bring-Up: A Practical Debugging Checklist
-description: Trace link training, enumeration, BARs, and transactions when a PCIe endpoint does not behave.
+description: PCIe explained from the ground up (lanes, link training, configuration space, enumeration, BARs, DMA) and a layer-by-layer checklist for bringing up a device that doesn't work.
 topic: firmware
 date: 2026-10-22
-read: 3 min read
-lede: PCIe problems often appear as one symptom—no device, missing BAR, unstable link, or low throughput—but originate at different layers. A disciplined bring-up process prevents software tuning from masking a physical or configuration problem.
+updated: 2026-11-20
+read: 12 min read
+order: 50
+lede: When a PCIe device "doesn't show up", the cause can be anywhere from a missing reference clock to a driver bug. PCIe is built in layers, and debugging goes fastest when you check them in order, bottom up.
 -->
+<h2>PCIe in five minutes</h2>
+<p>PCI Express connects a CPU to devices such as SSDs, network cards, GPUs and FPGAs. It replaced the old parallel PCI bus with fast serial links, but kept PCI's software model, which is why the same enumeration and drivers still work.</p>
+<ul>
+<li>A <strong>lane</strong> is one pair of differential wires in each direction. A link has 1, 2, 4, 8 or 16 lanes (x1 to x16).</li>
+<li>Each <strong>generation</strong> raises the per-lane rate: Gen1 2.5 GT/s, Gen2 5, Gen3 8, Gen4 16, Gen5 32 GT/s.</li>
+<li>The <strong>Root Complex</strong> sits in the CPU or SoC. <strong>Endpoints</strong> are the devices. <strong>Switches</strong> fan one link out to several.</li>
+<li>Devices are addressed by <strong>Bus:Device.Function (BDF)</strong>, for example <code>01:00.0</code>.</li>
+</ul>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 230" role="img" aria-label="PCIe topology: CPU with root complex, root ports linking to an NVMe SSD directly and to a switch that connects a NIC and an FPGA">
+<rect class="ink" x="240" y="10" width="200" height="60" rx="6"/><text class="h" x="256" y="34">CPU / SoC</text><text class="s" x="256" y="54">Root Complex, bus 0</text>
+<path class="ln" d="M290 70l-160 50M390 70l100 50"/>
+<rect class="sg" x="40" y="120" width="180" height="50" rx="6"/><text class="h" x="56" y="142">NVMe SSD</text><text class="m s" x="56" y="160">01:00.0 · x4 Gen4</text>
+<rect class="cu" x="400" y="120" width="180" height="50" rx="6"/><text class="h" x="416" y="142">PCIe switch</text><text class="m s" x="416" y="160">bus 02, 03</text>
+<path class="ln" d="M440 170l-60 30M540 170l60 30"/>
+<rect class="b" x="280" y="200" width="150" height="26" rx="5"/><text class="m s" x="290" y="218">NIC 04:00.0</text>
+<rect class="b" x="520" y="200" width="150" height="26" rx="5"/><text class="m s" x="530" y="218">FPGA 05:00.0</text>
+</svg><figcaption>PCIe is a tree of point-to-point links. Every link is trained independently, and every device is found by walking the tree.</figcaption></figure>
 
-<h2>Start with the link</h2><p>Confirm power, reference clock, reset timing, lane wiring, and supported link generation/width. Check the controller's link status and LTSSM state using vendor documentation. A link that repeatedly retrains should be investigated before application-level benchmarks.</p><h2>Confirm enumeration</h2><p>On Linux, tools such as <code>lspci -vv</code> and the kernel log can show whether the root complex discovers the endpoint and what capabilities are negotiated. On RTOS or bare-metal systems, use the platform's configuration-space inspection tools.</p><h2>Inspect BAR assignment</h2><p>BARs describe endpoint resources. Confirm the BAR type and size, that the root complex assigned an address, and that the bridge windows cover the required range. Do not assume a BAR address is a CPU physical address without checking the platform's address translation and mapping rules.</p><h2>Measure transactions carefully</h2><p>Separate configuration traffic from memory reads/writes, account for transaction size and completion latency, and compare posted writes with non-posted reads. Small 32-bit reads can be dominated by round-trip latency rather than link bandwidth. Use aligned, repeated transfers and report both latency and throughput.</p><h2>Checklist</h2><ul><li>Verify reset, clocks, power, lane mapping, and link width/speed.</li><li>Check LTSSM stability and negotiated capabilities.</li><li>Confirm enumeration, BAR sizing/assignment, and address translation.</li><li>Check IOMMU, inbound/outbound windows, and DMA configuration where relevant.</li><li>Measure large transfers separately from small register accesses.</li><li>Change one variable at a time and preserve logs.</li></ul><h2>Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
+<h2>The layers, bottom up</h2>
+<p>Bring-up means confirming each layer works before trusting the one above it:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 270" role="img" aria-label="Five bring-up layers stacked: physical, link training, enumeration, resources and BARs, driver and DMA, with the tool used to check each">
+<g transform="translate(20,10)">
+<rect class="ink" x="0" y="200" width="420" height="44" rx="5"/><text class="h" x="14" y="227">1. Physical: power, reset, clock, signals</text>
+<rect class="wn" x="0" y="150" width="420" height="44" rx="5"/><text class="h" x="14" y="177">2. Link training: LTSSM reaches L0</text>
+<rect class="cu" x="0" y="100" width="420" height="44" rx="5"/><text class="h" x="14" y="127">3. Enumeration: config space readable</text>
+<rect class="sg" x="0" y="50" width="420" height="44" rx="5"/><text class="h" x="14" y="77">4. Resources: BARs assigned, MSI set up</text>
+<rect class="b" x="0" y="0" width="420" height="44" rx="5"/><text class="h" x="14" y="27">5. Driver: probe, registers, DMA, IRQs</text>
+<text class="s" x="440" y="227">scope, schematic, PERST# timing</text>
+<text class="s" x="440" y="177">controller LTSSM status, link status</text>
+<text class="s" x="440" y="127">lspci, vendor/device ID</text>
+<text class="s" x="440" y="77">lspci -vv "Region", dmesg</text>
+<text class="s" x="440" y="27">dmesg, driver logs, IOMMU faults</text>
+</g>
+</svg><figcaption>Debug from the bottom. A driver can never fix a link that does not train.</figcaption></figure>
 
+<h2>1. Physical layer</h2>
+<p>Most "PCIe software problems" on a new board are hardware. Check:</p>
+<ul>
+<li><strong>Power rails</strong> to the endpoint are up and stable before reset is released.</li>
+<li><strong>Reference clock</strong> (usually 100 MHz differential) is present on both sides, or each side is configured for its own clock if the design uses separate clocks.</li>
+<li><strong>PERST#</strong> (the reset line) is held low until power and clock are stable, then released. The specification requires at least 100 ms from power-good to PERST# release. Some FPGAs need longer because they load their configuration first.</li>
+<li><strong>Lane polarity and order</strong>: polarity inversion within a pair is corrected automatically, and lane reversal is usually supported, but swapped transmit and receive pairs never work.</li>
+<li><strong>AC coupling capacitors</strong> on the transmit side, correct placement and value.</li>
+</ul>
+
+<h2>2. Link training</h2>
+<p>When reset is released, both ends run the <strong>LTSSM</strong> (Link Training and Status State Machine). They detect each other's receivers, exchange training sequences to lock bit and symbol alignment, agree on width and speed, and arrive in state <strong>L0</strong>, which means the link is up. Faster speeds also run <em>equalization</em> to tune the transmitters for the channel.</p>
+<ul>
+<li>Most root-complex controllers expose the current LTSSM state in a debug register. A link stuck in <code>Detect</code> means the receiver is not seen at all (power, reset, wiring). Stuck in <code>Polling</code> or <code>Configuration</code> usually means signal-integrity or lane-mapping problems.</li>
+<li>A link that trains at Gen1 but fails at Gen3 or Gen4 points at signal integrity or equalization.</li>
+<li>Check the negotiated result:</li>
+</ul>
+```bash
+sudo lspci -s 01:00.0 -vv | grep -E 'LnkCap|LnkSta'
+#   LnkCap: Port #0, Speed 16GT/s, Width x4 ...     <- what the device supports
+#   LnkSta: Speed 8GT/s (downgraded), Width x2 (downgraded)   <- what it actually got
+```
+<p>"Downgraded" is a strong hint: a lane is broken, or the channel cannot sustain the higher speed.</p>
+
+<h2>3. Enumeration</h2>
+<p>Every PCIe function has a <strong>configuration space</strong> (256 bytes for legacy PCI, 4 KB for PCIe). Its first bytes hold the Vendor ID and Device ID. At boot, firmware or the OS performs <strong>enumeration</strong>: it walks the tree, reads the Vendor ID at each possible BDF, and records what it finds. An empty slot reads as <code>0xFFFF</code>.</p>
+```bash
+lspci -nn                         # list devices with [vendor:device] IDs
+sudo lspci -s 01:00.0 -xxx        # hex dump of configuration space
+```
+<ul>
+<li>Link up but no device in <code>lspci</code>: the endpoint was not ready when enumeration ran. Common with FPGAs that load late. Rescan with <code>echo 1 | sudo tee /sys/bus/pci/rescan</code>, or delay enumeration.</li>
+<li>On embedded SoCs, check that the root complex is enabled in the Device Tree and its driver probed: <code>dmesg | grep -i pci</code>.</li>
+</ul>
+
+<h2>4. BARs and resources</h2>
+<p>A device tells the host how much memory it needs through <strong>Base Address Registers (BARs)</strong> in configuration space. The OS sizes each BAR (by writing all ones and reading back which bits stick), assigns an address range in the CPU's physical address space, and writes the base address back. From then on, CPU reads and writes to that range reach the device's registers.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 190" role="img" aria-label="BAR assignment: device config space BAR0 requests 64 KB; OS assigns address range in the PCIe memory window; driver maps it with ioremap">
+<rect class="b" x="20" y="20" width="200" height="150" rx="6"/><text class="h" x="36" y="44">Config space</text>
+<rect class="cu" x="36" y="60" width="168" height="28" rx="3"/><text class="m s" x="46" y="79">BAR0: needs 64 KB</text>
+<rect class="b" x="36" y="96" width="168" height="28" rx="3"/><text class="m s" x="46" y="115">BAR2: needs 1 MB</text>
+<rect class="ink" x="280" y="20" width="160" height="150" rx="6"/><text class="h" x="296" y="44">PCIe MMIO window</text>
+<rect class="cu" x="296" y="60" width="128" height="28" rx="3"/><text class="m s" x="304" y="79">0x6000_0000</text>
+<rect class="b" x="296" y="96" width="128" height="28" rx="3"/><text class="m s" x="304" y="115">0x6010_0000</text>
+<rect class="sg" x="500" y="60" width="160" height="64" rx="6"/><text class="h" x="516" y="84">Driver</text><text class="m s" x="516" y="106">pci_iomap(BAR0)</text>
+<path class="lc" d="M204 74h92M424 74h76"/>
+<text class="s" x="230" y="160">OS assigns addresses inside the window the root complex decodes</text>
+</svg><figcaption>Each BAR requests a size; the OS places it in the address window the root complex forwards to PCIe.</figcaption></figure>
+<ul>
+<li>"BAR 0: no space for [mem size 0x10000000]" in <code>dmesg</code> means the root complex's memory window, set in the Device Tree <code>ranges</code> or by firmware, is too small for what the device asks for.</li>
+<li>In <code>lspci -vv</code>, a <code>Region 0: Memory at ... [disabled]</code> or <code>[virtual]</code> line means the BAR was not enabled. Check the Command register's Memory Space Enable bit.</li>
+</ul>
+
+<h2>5. Driver, interrupts and DMA</h2>
+<ul>
+<li><strong>Bus mastering</strong> must be enabled (<code>pci_set_master()</code>) before the device can DMA. Forgetting it gives silently zero transfers.</li>
+<li><strong>Interrupts</strong>: PCIe uses <strong>MSI/MSI-X</strong>, which are memory writes to a special address, not wires. If interrupts never arrive, check that the MSI controller is configured in the platform and that <code>lspci -vv</code> shows <code>MSI: Enable+</code>.</li>
+<li><strong>IOMMU</strong>: with an IOMMU active, the device can only reach memory mapped for it through the DMA API. Using raw physical addresses produces IOMMU faults in <code>dmesg</code>.</li>
+<li><strong>Errors</strong>: AER (Advanced Error Reporting) logs correctable and uncorrectable errors. A steady stream of correctable errors means a marginal link even if it "works".</li>
+</ul>
+
+<h2>Performance sanity check</h2>
+<p>A link's usable bandwidth is lower than its raw rate. Gen3 x4 gives about 3.9 GB/s per direction after encoding; protocol overhead (packet headers, flow control, small payloads) typically takes another 10 to 20 percent. If you measure far below that, check:</p>
+<ul>
+<li>The negotiated speed and width (<code>LnkSta</code>), not the slot's label.</li>
+<li><strong>Max Payload Size</strong> and <strong>Max Read Request Size</strong> in <code>DevCtl</code>: small values cap throughput.</li>
+<li>Whether DMA buffers are small, unaligned, or bounced through a swiotlb buffer because of address limits.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Check PCIe from the bottom up: power, clock and reset; link training to L0 with the expected speed and width; enumeration; BAR assignment; then the driver's interrupts and DMA. Each layer has its own tools, and a problem at a lower layer always shows up as a confusing symptom higher up.</p></div>

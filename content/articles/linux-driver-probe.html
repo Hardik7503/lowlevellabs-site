@@ -1,30 +1,129 @@
 <!--meta
 title: What Happens When a Linux Driver Probes?
-description: A beginner-friendly overview of Linux driver matching and probe.
+description: The Linux driver model explained: buses, devices and drivers, how matching triggers probe(), what probe and remove should do, devm-managed resources, deferred probing and the order of everything.
 topic: drivers
 date: 2026-10-22
-read: 3 min read
-lede: A conceptual walk through device matching and the probe callback.
+updated: 2026-11-20
+read: 10 min read
+order: 20
+lede: In Linux you never call your driver's setup function yourself. You register the driver, the kernel registers devices, and a matchmaker in the middle calls your probe() when the two fit. Once you see that model, every driver looks familiar.
 -->
+<h2>Three objects and a matchmaker</h2>
+<p>The Linux <strong>driver model</strong> is built on three kinds of objects:</p>
+<ul>
+<li>A <strong>bus</strong> (<code>struct bus_type</code>): platform, PCI, USB, I²C, SPI. It knows how to compare a device with a driver.</li>
+<li>A <strong>device</strong> (<code>struct device</code>): one piece of hardware the kernel knows exists, with its resources. Created by bus enumeration (PCI, USB) or from the Device Tree or ACPI.</li>
+<li>A <strong>driver</strong> (<code>struct device_driver</code>): code that can operate a kind of device, with a table of the IDs it supports.</li>
+</ul>
+<p>The <strong>driver core</strong> keeps a list of devices and drivers per bus. Whenever either side is added, it tries to pair them using the bus's <code>match()</code> function. On a match, it calls the driver's <code>probe()</code>.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 250" role="img" aria-label="Driver core matching: devices list and drivers list on a bus; when a new device or driver is registered the bus match function compares IDs and calls probe">
+<rect class="b" x="20" y="20" width="200" height="190" rx="8"/><text class="h" x="36" y="44">Devices on the bus</text>
+<rect class="cu" x="36" y="60" width="168" height="30" rx="4"/><text class="m s" x="46" y="80">"ti,tmp102" @0x48</text>
+<rect class="b" x="36" y="98" width="168" height="30" rx="4"/><text class="m s" x="46" y="118">"bosch,bme280" @0x76</text>
+<rect class="b" x="36" y="136" width="168" height="30" rx="4"/><text class="m s" x="46" y="156">"atmel,24c02" @0x50</text>
+<rect class="b" x="460" y="20" width="200" height="190" rx="8"/><text class="h" x="476" y="44">Registered drivers</text>
+<rect class="sg" x="476" y="60" width="168" height="30" rx="4"/><text class="m s" x="486" y="80">tmp102 driver</text>
+<rect class="b" x="476" y="98" width="168" height="30" rx="4"/><text class="m s" x="486" y="118">at24 driver</text>
+<rect class="ink" x="260" y="70" width="160" height="80" rx="8"/><text class="h" x="276" y="96">bus → match()</text><text class="s" x="276" y="118">compare IDs, then</text><text class="m s" x="276" y="138">drv-&gt;probe(dev)</text>
+<path class="lc" d="M204 75h56M420 75h56"/>
+<text class="s" x="20" y="236">Order does not matter: a device added after its driver, or a driver loaded after its device, both trigger a match.</text>
+</svg><figcaption>The driver core pairs devices and drivers per bus. A match on the bus's ID table results in a call to <code>probe()</code>.</figcaption></figure>
 
-<p>In Linux, a device driver is not normally started by manually calling its initialization function for each device. Instead, the driver core matches registered drivers with devices discovered by buses such as platform, I²C, SPI, and PCI. When a match occurs, the driver core can call the driver's <code>probe()</code> callback.</p><h2>Typical flow</h2><pre><code>Device is registered / discovered
-             ↓
-       Driver core matches
-             ↓
-      Driver's probe() runs
-             ↓
- Request resources and configure HW
-             ↓
- Register interfaces / start device</code></pre><h2>What belongs in probe()?</h2><p>A driver's probe function commonly obtains resources described by firmware (such as Device Tree), maps registers, requests interrupts, initializes the hardware, and registers the appropriate subsystem interface. Exact steps depend on the bus and subsystem.</p><pre><code>static int demo_probe(struct platform_device *pdev)
+<h2>How matching works</h2>
+<p>Each bus decides what "match" means, but the idea is always an ID table in the driver:</p>
+<table>
+<thead><tr><th>Bus</th><th>Device identified by</th><th>Driver table</th></tr></thead>
+<tbody>
+<tr><td>Platform (Device Tree)</td><td><code>compatible</code> string</td><td><code>of_device_id[]</code></td></tr>
+<tr><td>Platform (ACPI)</td><td>ACPI HID such as <code>"PRP0001"</code></td><td><code>acpi_device_id[]</code></td></tr>
+<tr><td>PCI</td><td>Vendor and device ID</td><td><code>pci_device_id[]</code></td></tr>
+<tr><td>USB</td><td>Vendor, product, class</td><td><code>usb_device_id[]</code></td></tr>
+<tr><td>I²C / SPI</td><td><code>compatible</code> string, or name</td><td><code>of_device_id[]</code>, <code>i2c_device_id[]</code></td></tr>
+</tbody>
+</table>
+<p><code>MODULE_DEVICE_TABLE()</code> exports that table into the module's metadata, so udev can load the right module automatically when a matching device appears.</p>
+
+<h2>What probe() should do</h2>
+<p>Probe's job: <em>take this device from "known to exist" to "fully working and registered with its subsystem".</em> A typical order:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 120" role="img" aria-label="Probe steps: allocate state, get resources, enable hardware, request IRQ, register with subsystem">
+<g transform="translate(10,30)">
+<rect class="b" x="0" y="0" width="122" height="56" rx="6"/><text class="s" x="10" y="24">1. allocate</text><text class="s" x="10" y="42">private state</text>
+<rect class="cu" x="132" y="0" width="122" height="56" rx="6"/><text class="s" x="142" y="24">2. get resources</text><text class="s" x="142" y="42">regs, clocks, GPIOs</text>
+<rect class="cu" x="264" y="0" width="122" height="56" rx="6"/><text class="s" x="274" y="24">3. power up,</text><text class="s" x="274" y="42">reset, check ID</text>
+<rect class="wn" x="396" y="0" width="122" height="56" rx="6"/><text class="s" x="406" y="24">4. request IRQ</text>
+<rect class="sg" x="528" y="0" width="122" height="56" rx="6"/><text class="s" x="538" y="24">5. register with</text><text class="s" x="538" y="42">subsystem (last!)</text>
+</g>
+</svg><figcaption>Register with the subsystem last: from that moment, user space can open and use the device, so everything must already work.</figcaption></figure>
+```c
+struct tmp_dev {
+    struct i2c_client *client;
+    struct regmap     *map;
+};
+
+static int tmp_probe(struct i2c_client *client)
 {
-    struct resource *res;
+    struct device *dev = &client->dev;
+    struct tmp_dev *td;
+    struct regulator *vdd;
+    unsigned int id;
+    int ret;
 
-    res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-    if (!res)
-        return -EINVAL;
+    td = devm_kzalloc(dev, sizeof(*td), GFP_KERNEL);              /* 1 */
+    if (!td)
+        return -ENOMEM;
+    td->client = client;
 
-    /* Obtain and initialize the device's resources here. */
-    dev_info(&pdev->dev, "demo device matched\n");
-    return 0;
-}</code></pre><p><strong>Note:</strong> This is an illustrative skeleton, not a complete driver. A real driver should generally use managed resource APIs such as <code>devm_platform_ioremap_resource()</code> where appropriate, handle errors, and follow the relevant subsystem's registration model.</p><h2>Things to remember</h2><ul><li>Driver registration and device discovery are separate events; either may happen first.</li><li>The matching mechanism depends on the bus and its ID tables or firmware match data.</li><li>Probe should return an error if the device cannot be initialized.</li><li>Never assume a register address, interrupt, or clock without checking the platform description and documentation.</li></ul><p>Use this page as a starting note, then expand it with tested examples for a specific bus or kernel version.</p>
+    vdd = devm_regulator_get(dev, "vdd");                          /* 2 */
+    if (IS_ERR(vdd))
+        return dev_err_probe(dev, PTR_ERR(vdd), "no vdd supply\n");
 
+    td->map = devm_regmap_init_i2c(client, &tmp_regmap_cfg);
+    if (IS_ERR(td->map))
+        return PTR_ERR(td->map);
+
+    ret = regmap_read(td->map, REG_DEVICE_ID, &id);                /* 3 */
+    if (ret)
+        return dev_err_probe(dev, ret, "device not responding\n");
+    if (id != EXPECTED_ID)
+        return dev_err_probe(dev, -ENODEV, "unexpected id 0x%x\n", id);
+
+    i2c_set_clientdata(client, td);
+    return devm_hwmon_device_register_with_info(dev, "tmp", td,    /* 5 */
+                                                &tmp_chip_info, NULL);
+}
+```
+<p>(Regulator enabling and the IRQ are left out to keep the example short; they follow the same <code>devm_</code> pattern.)</p>
+
+<h2>devm_: cleanup for free</h2>
+<p>Every resource acquired in probe must be released when the device goes away, and also when probe fails halfway. Writing that cleanup by hand with <code>goto</code> ladders is error-prone. <strong>Managed resources</strong> (<code>devm_*</code> functions) are recorded against the device and released automatically, in reverse order, when probe fails or the driver unbinds. Prefer them everywhere they exist.</p>
+<div class="pitfall"><strong>Pitfall: devm and IRQ ordering</strong>
+<p>A <code>devm_request_irq()</code> handler is freed <em>after</em> <code>remove()</code> runs. If <code>remove()</code> shuts the hardware down or frees data the handler uses, a late interrupt can crash. Disable the device's interrupts in <code>remove()</code> first.</p></div>
+
+<h2>Deferred probing</h2>
+<p>Probe may need something that isn't ready yet: a clock from a driver that hasn't probed, a regulator on a PMIC still being set up. Returning <code>-EPROBE_DEFER</code> tells the driver core "try me again later". It retries deferred devices whenever another driver successfully binds. <code>dev_err_probe()</code> handles this nicely: for <code>-EPROBE_DEFER</code> it records the reason quietly instead of printing an error.</p>
+```bash
+cat /sys/kernel/debug/devices_deferred      # which devices are waiting, and why
+```
+
+<h2>remove() and the rest of the lifecycle</h2>
+<ul>
+<li><code>remove()</code> runs on unbind, module unload or hot-unplug. Undo what probe did that <code>devm</code> doesn't cover: stop the hardware, cancel work items, unregister anything registered manually.</li>
+<li><code>shutdown()</code> runs at reboot to leave hardware quiet.</li>
+<li>Power management callbacks (<code>suspend</code>/<code>resume</code>, runtime PM) save and restore state around low-power modes.</li>
+</ul>
+<p>You can trigger unbind and bind by hand to test remove paths:</p>
+```bash
+echo 1-0048 | sudo tee /sys/bus/i2c/drivers/tmp102/unbind
+echo 1-0048 | sudo tee /sys/bus/i2c/drivers/tmp102/bind
+```
+
+<h2>Rules of thumb</h2>
+<ul>
+<li>Probe can run at any time, on any CPU, possibly in parallel with other probes. Don't rely on global state or probe order.</li>
+<li>Return a meaningful negative error code; <code>-ENODEV</code> means "not my device", and the core will try other drivers.</li>
+<li>Never busy-wait for seconds in probe. If hardware takes long to start, do it asynchronously or set <code>PROBE_PREFER_ASYNCHRONOUS</code>.</li>
+<li>Check the ID register if the device has one. It catches wiring and address mistakes immediately.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Drivers and devices register independently on a bus; the driver core matches them by ID and calls <code>probe()</code>. Probe allocates state, acquires resources (preferably with <code>devm_</code>), brings the hardware up, and registers with its subsystem last. If a dependency is missing, it returns <code>-EPROBE_DEFER</code> and is retried.</p></div>
