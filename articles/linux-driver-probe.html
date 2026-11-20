@@ -1,4 +1,37 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="A beginner-friendly overview of Linux driver matching and probe."><title>What Happens When a Linux Driver Probes? — LowLevel Labs</title><link rel="stylesheet" href="../styles.css"><link rel="icon" href="../assets/favicon.svg"></head><body><header class="site-header"><div class="container nav-wrap"><a class="brand" href="../" aria-label="LowLevel Labs home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a><nav class="nav-links"><a href="../#articles">Articles</a><a href="../#topics">Topics</a><a href="../#about">About</a></nav></div></header><main class="container section article-page"><a class="read-link" href="../#articles">← Back to articles</a><div class="eyebrow" style="margin-top:28px">LINUX & DRIVERS · STARTER GUIDE</div><h1 style="font-size:clamp(36px,5vw,58px);max-width:900px">What Happens When a Linux Driver Probes?</h1><p class="hero-copy">A conceptual walk through device matching and the probe callback.</p><div class="article-content"><p>In Linux, a device driver is not normally started by manually calling its initialization function for each device. Instead, the driver core matches registered drivers with devices discovered by buses such as platform, I²C, SPI, and PCI. When a match occurs, the driver core can call the driver's <code>probe()</code> callback.</p><h2>Typical flow</h2><pre><code>Device is registered / discovered
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Happens When a Linux Driver Probes? | LowLevel Labs</title>
+<meta name="description" content="A beginner-friendly overview of Linux driver matching and probe.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/linux-driver-probe.html">
+<meta property="og:title" content="What Happens When a Linux Driver Probes?"><meta property="og:description" content="A beginner-friendly overview of Linux driver matching and probe.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/linux-driver-probe.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "What Happens When a Linux Driver Probes?", "description": "A beginner-friendly overview of Linux driver matching and probe.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/drivers.html">Linux device drivers</a></div>
+<h1>What Happens When a Linux Driver Probes?</h1>
+<p class="lede">A conceptual walk through device matching and the probe callback.</p>
+<div class="byline"><span>3 min read</span><span>22 Oct 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#typical-flow">Typical flow</a></li><li><a href="#what-belongs-in-probe">What belongs in probe()?</a></li><li><a href="#things-to-remember">Things to remember</a></li></ol></aside>
+<article class="prose">
+<p>In Linux, a device driver is not normally started by manually calling its initialization function for each device. Instead, the driver core matches registered drivers with devices discovered by buses such as platform, I²C, SPI, and PCI. When a match occurs, the driver core can call the driver's <code>probe()</code> callback.</p><h2 id="typical-flow">Typical flow</h2><pre><code>Device is registered / discovered
              ↓
        Driver core matches
              ↓
@@ -6,7 +39,7 @@
              ↓
  Request resources and configure HW
              ↓
- Register interfaces / start device</code></pre><h2>What belongs in probe()?</h2><p>A driver's probe function commonly obtains resources described by firmware (such as Device Tree), maps registers, requests interrupts, initializes the hardware, and registers the appropriate subsystem interface. Exact steps depend on the bus and subsystem.</p><pre><code>static int demo_probe(struct platform_device *pdev)
+ Register interfaces / start device</code></pre><h2 id="what-belongs-in-probe">What belongs in probe()?</h2><p>A driver's probe function commonly obtains resources described by firmware (such as Device Tree), maps registers, requests interrupts, initializes the hardware, and registers the appropriate subsystem interface. Exact steps depend on the bus and subsystem.</p><pre><code>static int demo_probe(struct platform_device *pdev)
 {
     struct resource *res;
 
@@ -17,5 +50,19 @@
     /* Obtain and initialize the device's resources here. */
     dev_info(&pdev->dev, "demo device matched\n");
     return 0;
-}</code></pre><p><strong>Note:</strong> This is an illustrative skeleton, not a complete driver. A real driver should generally use managed resource APIs such as <code>devm_platform_ioremap_resource()</code> where appropriate, handle errors, and follow the relevant subsystem's registration model.</p><h2>Things to remember</h2><ul><li>Driver registration and device discovery are separate events; either may happen first.</li><li>The matching mechanism depends on the bus and its ID tables or firmware match data.</li><li>Probe should return an error if the device cannot be initialized.</li><li>Never assume a register address, interrupt, or clock without checking the platform description and documentation.</li></ul><p>Use this page as a starting note, then expand it with tested examples for a specific bus or kernel version.</p><p class="content-note">Editorial note: validate all code against your target kernel version before using it in a real driver.</p></div></main><footer class="site-footer"><div class="container footer-inner"><a class="brand footer-brand" href="../"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a><p>Understand systems from hardware to software.</p><div class="footer-links"><a href="../#articles">Articles</a><a href="../#about">About</a></div><small class="copyright">© LowLevel Labs</small></div></footer><!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script><!-- End Cloudflare Web Analytics -->
-</body></html>
+}</code></pre><p><strong>Note:</strong> This is an illustrative skeleton, not a complete driver. A real driver should generally use managed resource APIs such as <code>devm_platform_ioremap_resource()</code> where appropriate, handle errors, and follow the relevant subsystem's registration model.</p><h2 id="things-to-remember">Things to remember</h2><ul><li>Driver registration and device discovery are separate events; either may happen first.</li><li>The matching mechanism depends on the bus and its ID tables or firmware match data.</li><li>Probe should return an error if the device cannot be initialized.</li><li>Never assume a register address, interrupt, or clock without checking the platform description and documentation.</li></ul><p>Use this page as a starting note, then expand it with tested examples for a specific bus or kernel version.</p>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="linux-platform-i2c-spi-drivers.html"><small>Previous in Linux device drivers</small><span>Platform, I²C, and SPI Drivers: What Is Different?</span></a><a class="pn next" href="linux-kernel-locking-spinlock-mutex.html"><small>Next in Linux device drivers</small><span>Spinlocks vs Mutexes in the Linux Kernel</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

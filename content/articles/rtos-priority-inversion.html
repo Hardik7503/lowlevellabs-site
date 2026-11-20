@@ -1,0 +1,109 @@
+<!--meta
+title: Priority Inversion and How RTOSes Prevent It
+description: How a low-priority task can block a high-priority one indefinitely, what happened on Mars Pathfinder, and how priority inheritance and priority ceiling fix it.
+topic: rtos
+date: 2026-11-20
+read: 10 min read
+featured: 1
+order: 20
+lede: In a preemptive priority scheduler the highest-priority ready task always runs. Add one shared mutex and that guarantee quietly breaks. This is priority inversion, and it once reset a spacecraft on Mars.
+-->
+<h2>The scheduling rule</h2>
+<p>Most real-time operating systems, including VxWorks, FreeRTOS, Zephyr and ThreadX, use <strong>fixed-priority preemptive scheduling</strong>. Every task has a priority. Whenever a higher-priority task becomes ready (an interrupt gives it a semaphore, a timer expires), the scheduler preempts whatever is running and switches to it immediately.</p>
+<p>That rule is what makes response times analysable: a high-priority task only waits for tasks of equal or higher priority, plus interrupt handlers. Priority inversion is any situation where a high-priority task ends up waiting for a <em>lower</em>-priority one.</p>
+
+<h2>Bounded inversion is normal</h2>
+<p>Suppose a low-priority task L holds a mutex protecting a shared buffer, and high-priority task H wants it. H blocks until L releases it. That is inversion, but it is <strong>bounded</strong>: H waits at most as long as L's critical section, which you can measure and keep short. Every system with shared resources has some of this.</p>
+
+<h2>Unbounded inversion is the bug</h2>
+<p>Now add a medium-priority task M that does not use the mutex at all.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 250" role="img" aria-label="Timeline showing low-priority task L taking a mutex, high-priority task H blocking on it, and medium task M preempting L so H waits indefinitely">
+<text class="m s" x="20" y="54">H (high)</text><text class="m s" x="20" y="114">M (medium)</text><text class="m s" x="20" y="174">L (low)</text>
+<path class="ln" d="M110 60h550M110 120h550M110 180h550"/>
+<rect class="wn" x="110" y="162" width="80" height="18"/><text class="s" x="120" y="156">takes mutex</text>
+<rect class="cu" x="190" y="42" width="40" height="18"/><text class="s" x="196" y="36">runs</text>
+<path class="ln dash" d="M230 51h70"/><text class="s" x="236" y="80">blocks on mutex</text>
+<rect class="wn" x="230" y="162" width="40" height="18"/>
+<rect class="sg" x="270" y="102" width="270" height="18"/><text class="s" x="330" y="96">M preempts L and runs for as long as it likes</text>
+<path class="ln dash" d="M300 51h240"/><text class="tc s h" x="330" y="36">H waits on M, which has lower priority</text>
+<rect class="wn" x="540" y="162" width="30" height="18"/><text class="s" x="520" y="200">gives mutex</text>
+<rect class="cu" x="570" y="42" width="80" height="18"/><text class="s" x="580" y="36">finally runs</text>
+<path class="ln" d="M110 220h550"/><text class="s" x="600" y="238">time →</text>
+</svg><figcaption>Unbounded priority inversion. Once L is preempted while holding the mutex, H's waiting time depends on M, a task it has no relationship with.</figcaption></figure>
+<ol>
+<li>L takes the mutex.</li>
+<li>H becomes ready, preempts L, tries to take the mutex and blocks.</li>
+<li>M becomes ready. It outranks L, so it preempts L.</li>
+<li>L cannot run, so it cannot release the mutex, so H cannot run. H now waits for M to finish, and for any other medium-priority task that shows up.</li>
+</ol>
+<p>H's worst-case latency is no longer bounded by a short critical section. It depends on the CPU load of unrelated tasks.</p>
+
+<h2>Mars Pathfinder, 1997</h2>
+<p>Pathfinder ran VxWorks. A high-priority bus-management task and a low-priority meteorological data task shared an information bus protected by a mutex. Medium-priority communications tasks occasionally ran long enough while the low-priority task held the mutex that the bus task missed its deadline. A watchdog noticed and reset the whole system, repeatedly.</p>
+<p>JPL engineers reproduced it on a ground replica using the system's trace logging. The mutex had been created without priority inheritance enabled. They uploaded a small patch that switched it on, and the resets stopped. The lesson engineers still repeat: the fix existed in the RTOS all along, it just was not turned on.</p>
+
+<h2>Fix 1: priority inheritance</h2>
+<p>With <strong>priority inheritance</strong>, when H blocks on a mutex held by L, the kernel temporarily raises L's priority to H's. M can no longer preempt L. L finishes its critical section quickly, releases the mutex, drops back to its own priority, and H runs.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 210" role="img" aria-label="Timeline with priority inheritance: L is boosted to H's priority, finishes its critical section, and H runs before M">
+<text class="m s" x="20" y="54">H (high)</text><text class="m s" x="20" y="114">M (medium)</text><text class="m s" x="20" y="174">L (low)</text>
+<path class="ln" d="M110 60h550M110 120h550M110 180h550"/>
+<rect class="wn" x="110" y="162" width="80" height="18"/>
+<rect class="cu" x="190" y="42" width="40" height="18"/>
+<rect class="cu" x="230" y="162" width="70" height="18"/><text class="s tc h" x="214" y="200">L boosted to H's priority</text>
+<rect class="cu" x="300" y="42" width="110" height="18"/><text class="s" x="306" y="36">H gets mutex, runs</text>
+<rect class="sg" x="410" y="102" width="200" height="18"/><text class="s" x="440" y="96">M runs after H</text>
+<path class="ln dash" d="M260 120v42"/><text class="s" x="268" y="140">M ready here, but cannot preempt</text>
+</svg><figcaption>Priority inheritance bounds H's wait to L's critical section. M runs only after H is done.</figcaption></figure>
+<p>Inheritance is transitive in good implementations: if L is itself blocked on another mutex held by an even lower task, the boost propagates down the chain.</p>
+
+<h2>Fix 2: priority ceiling</h2>
+<p>With the <strong>priority ceiling protocol</strong> (immediate ceiling in its common form), each mutex is assigned a ceiling equal to the highest priority of any task that will ever lock it. Any task that takes the mutex immediately runs at the ceiling until it releases it.</p>
+<table>
+<thead><tr><th></th><th>Priority inheritance</th><th>Immediate priority ceiling</th></tr></thead>
+<tbody>
+<tr><td>When the boost happens</td><td>Only when a higher task actually blocks</td><td>Every time the mutex is taken</td></tr>
+<tr><td>Configuration</td><td>None, automatic</td><td>You must know every user's priority</td></tr>
+<tr><td>Deadlock between two mutexes</td><td>Still possible</td><td>Prevented, when ceilings are set correctly</td></tr>
+<tr><td>Blocking per job</td><td>Can be chained across several mutexes</td><td>At most one critical section</td></tr>
+<tr><td>Common in</td><td>VxWorks, FreeRTOS, Zephyr, POSIX <code>PTHREAD_PRIO_INHERIT</code></td><td>OSEK/AUTOSAR, Ada, POSIX <code>PTHREAD_PRIO_PROTECT</code></td></tr>
+</tbody>
+</table>
+
+<h2>Turning it on in practice</h2>
+<h3>VxWorks</h3>
+```c
+SEM_ID busLock = semMCreate(SEM_Q_PRIORITY | SEM_INVERSION_SAFE | SEM_DELETE_SAFE);
+
+semTake(busLock, WAIT_FOREVER);
+/* short critical section */
+semGive(busLock);
+```
+<p><code>SEM_INVERSION_SAFE</code> enables inheritance and requires <code>SEM_Q_PRIORITY</code>, so that the highest-priority waiter is the one that gets the mutex next.</p>
+<h3>FreeRTOS</h3>
+```c
+SemaphoreHandle_t lock = xSemaphoreCreateMutex();   /* mutexes inherit priority */
+
+if (xSemaphoreTake(lock, pdMS_TO_TICKS(10)) == pdTRUE) {
+    /* critical section */
+    xSemaphoreGive(lock);
+}
+```
+<p>FreeRTOS mutexes implement inheritance; <strong>binary semaphores do not</strong>. Using <code>xSemaphoreCreateBinary()</code> as a lock is a classic way to reintroduce the Pathfinder bug.</p>
+<h3>POSIX threads</h3>
+```c
+pthread_mutexattr_t a;
+pthread_mutexattr_init(&a);
+pthread_mutexattr_setprotocol(&a, PTHREAD_PRIO_INHERIT);
+pthread_mutex_init(&lock, &a);
+```
+
+<h2>Design rules that matter more than the protocol</h2>
+<ul>
+<li><strong>Keep critical sections short and bounded.</strong> No blocking calls, no logging to slow devices, no waiting on other locks inside them.</li>
+<li><strong>Use a mutex, not a semaphore, for mutual exclusion.</strong> Only mutexes have an owner, and only an owner can be boosted.</li>
+<li><strong>Prefer message passing for cross-priority data.</strong> If H only needs the latest sample, a queue or double buffer avoids sharing a lock at all.</li>
+<li><strong>Trace it.</strong> Pathfinder was diagnosed from a trace. Tools such as VxWorks System Viewer, Tracealyzer or SEGGER SystemView show inversion as a gap where the high-priority task is blocked while a medium task runs.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Priority inversion is unavoidable when tasks share resources. Unbounded inversion is a design bug. Lock shared resources with an inheritance-capable mutex (or use ceilings), keep critical sections short, and verify with a trace.</p></div>

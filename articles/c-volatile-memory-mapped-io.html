@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>volatile and Memory-Mapped I/O in Embedded C | LowLevel Labs</title>
+<meta name="description" content="What volatile really guarantees, why register access breaks without it, and what it does not do for you: atomicity, ordering and DMA.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/c-volatile-memory-mapped-io.html">
+<meta property="og:title" content="volatile and Memory-Mapped I/O in Embedded C"><meta property="og:description" content="What volatile really guarantees, why register access breaks without it, and what it does not do for you: atomicity, ordering and DMA.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/c-volatile-memory-mapped-io.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "volatile and Memory-Mapped I/O in Embedded C", "description": "What volatile really guarantees, why register access breaks without it, and what it does not do for you: atomicity, ordering and DMA.", "datePublished": "2026-11-20", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/c.html">C for embedded</a></div>
+<h1>volatile and Memory-Mapped I/O in Embedded C</h1>
+<p class="lede">A peripheral register looks like ordinary memory to C, but it behaves nothing like it. <code>volatile</code> is the one keyword that tells the compiler so, and it is also one of the most misunderstood.</p>
+<div class="byline"><span>9 min read</span><span>20 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#registers-are-not-memory">Registers are not memory</a></li><li><a href="#the-bug-a-loop-that-never-exits">The bug: a loop that never exits</a></li><li><a href="#what-volatile-guarantees">What volatile guarantees</a></li><li><a href="#the-idiomatic-form-a-register-struct">The idiomatic form: a register struct</a></li><li><a href="#read-side-effects-why-harmless-reads-are-not">Read side effects: why &quot;harmless&quot; reads are not</a></li><li><a href="#what-volatile-does-not-do">What volatile does not do</a></li><li><a href="#sharing-variables-with-an-interrupt-handler">Sharing variables with an interrupt handler</a></li><li><a href="#in-the-linux-kernel-don-t-use-volatile">In the Linux kernel: don&#x27;t use volatile</a></li></ol></aside>
+<article class="prose">
+<h2 id="registers-are-not-memory">Registers are not memory</h2>
+<p>On most microcontrollers and SoCs, peripheral registers are <strong>memory-mapped</strong>: a UART status register might live at physical address <code>0x4000_4400</code>, and the CPU reads it with an ordinary load instruction. To the C compiler, that address is just an object it can read and write.</p>
+<p>But a register is not passive storage. Reading a status register reports the hardware's state <em>right now</em>, which can change between two reads without any instruction running. Reading a data register can pop a byte from a FIFO. Writing a register can start a DMA transfer. Every access is an event.</p>
+<p>The compiler optimizes under the assumption that memory only changes when the program changes it. That assumption is exactly wrong for hardware.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 230" role="img" aria-label="CPU issuing loads and stores over the bus to RAM and to peripheral registers in the same address space">
+<rect class="ink" x="20" y="80" width="120" height="70" rx="6"/><text class="h" x="58" y="112">CPU</text><text class="s" x="42" y="132">ldr / str</text>
+<path class="ln" d="M140 115h70"/><rect class="sg" x="210" y="95" width="110" height="40" rx="6"/><text class="h" x="230" y="120">System bus</text>
+<path class="ln" d="M320 115h40V45h40M360 115v80h40"/>
+<rect class="b" x="400" y="20" width="250" height="56" rx="6"/><text class="h" x="414" y="42">RAM</text><text class="s m" x="414" y="62">0x2000_0000  value only changes on write</text>
+<rect class="cu" x="400" y="160" width="250" height="56" rx="6"/><text class="h" x="414" y="182">UART registers</text><text class="s m" x="414" y="202">0x4000_4400  changes on its own</text>
+</svg><figcaption>RAM and peripheral registers share one address space and are reached with the same instructions, but only RAM behaves like memory.</figcaption></figure>
+
+<h2 id="the-bug-a-loop-that-never-exits">The bug: a loop that never exits</h2>
+<p>Here is a polling loop that waits for the UART's transmit-empty flag, written without <code>volatile</code>:</p>
+<pre><code class="language-c">#define UART_SR   (*(uint32_t *)0x40004400u)   /* status register */
+#define UART_DR   (*(uint32_t *)0x40004404u)   /* data register   */
+#define SR_TXE    (1u &lt;&lt; 7)
+
+void uart_putc(char c)
+{
+    while ((UART_SR &amp; SR_TXE) == 0)
+        ;                       /* wait for space in the TX FIFO */
+    UART_DR = (uint32_t)c;
+}</code></pre>
+<p>At <code>-O0</code> this often works. At <code>-O2</code>, the compiler is entitled to reason: nothing inside the loop writes <code>UART_SR</code>, so its value cannot change, so load it once. The generated code becomes "load once, then spin forever if the bit was clear", which is a hang that only appears in release builds.</p>
+<pre><code class="language-armasm">uart_putc:
+    ldr   r3, =0x40004400
+    ldr   r3, [r3]          @ loaded ONCE
+    tst   r3, #128
+    beq   .Lspin
+    ...
+.Lspin:
+    b     .Lspin            @ infinite loop, register never re-read</code></pre>
+<h2 id="what-volatile-guarantees">What volatile guarantees</h2>
+<p>Qualifying the object as <code>volatile</code> tells the compiler that every access is an observable side effect. In practice, for each read or write of a volatile object in the source, the compiler must:</p>
+<ul>
+<li><strong>Perform the access.</strong> It cannot drop a read because it "knows" the value, and cannot drop a write because a later write overwrites it.</li>
+<li><strong>Not invent extra accesses</strong> and not merge two accesses into one.</li>
+<li><strong>Keep volatile accesses in program order</strong> relative to each other.</li>
+</ul>
+<pre><code class="language-c">#define UART_SR   (*(volatile uint32_t *)0x40004400u)
+#define UART_DR   (*(volatile uint32_t *)0x40004404u)</code></pre>
+<p>Now every iteration emits a fresh <code>ldr</code>, and the loop exits when the hardware sets the bit.</p>
+
+<h2 id="the-idiomatic-form-a-register-struct">The idiomatic form: a register struct</h2>
+<p>Vendor headers (CMSIS, for example) describe a peripheral as a struct overlaid on its base address. The layout mirrors the register map in the reference manual:</p>
+<pre><code class="language-c">#include &lt;stddef.h&gt;
+#include &lt;stdint.h&gt;
+
+#define SR_TXE  (1u &lt;&lt; 7)
+
+typedef struct {
+    volatile uint32_t SR;      /* 0x00 status            */
+    volatile uint32_t DR;      /* 0x04 data              */
+    volatile uint32_t BRR;     /* 0x08 baud rate         */
+    volatile uint32_t CR1;     /* 0x0C control 1         */
+} uart_regs_t;
+
+#define UART1  ((uart_regs_t *)0x40004400u)
+
+_Static_assert(offsetof(uart_regs_t, CR1) == 0x0C, "register map mismatch");
+
+void uart_putc(char c)
+{
+    while ((UART1-&gt;SR &amp; SR_TXE) == 0) { }
+    UART1-&gt;DR = (uint8_t)c;
+}</code></pre>
+<p>The <code>_Static_assert</code> catches a missing or mis-sized field at compile time, which is the most common register-map bug. Mark read-only registers <code>const volatile</code> so an accidental write fails to compile.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 190" role="img" aria-label="A C struct overlaid on a peripheral register block at base address 0x40004400">
+<text class="m s" x="20" y="24">uart_regs_t *UART1 = 0x40004400</text>
+<g transform="translate(20,36)">
+<rect class="cu" x="0" y="0" width="300" height="34"/><text class="m" x="12" y="22">SR   +0x00</text><text class="s" x="190" y="22">read: status</text>
+<rect class="sg" x="0" y="34" width="300" height="34"/><text class="m" x="12" y="56">DR   +0x04</text><text class="s" x="190" y="56">read pops RX</text>
+<rect class="b" x="0" y="68" width="300" height="34"/><text class="m" x="12" y="90">BRR  +0x08</text><text class="s" x="190" y="90">config</text>
+<rect class="b" x="0" y="102" width="300" height="34"/><text class="m" x="12" y="124">CR1  +0x0C</text><text class="s" x="190" y="124">config</text>
+</g>
+<path class="ln dash" d="M330 70h60M330 104h60"/>
+<text x="400" y="66">Each field is one 32-bit register.</text>
+<text x="400" y="88" class="s">Field order and size must match the</text>
+<text x="400" y="106" class="s">reference manual exactly, including</text>
+<text x="400" y="124" class="s">reserved gaps (use padding arrays).</text>
+</svg><figcaption>A struct of <code>volatile</code> members overlaid on the peripheral's base address. Reserved holes in the map need explicit padding fields such as <code>uint32_t RESERVED0[2];</code>.</figcaption></figure>
+
+<h2 id="read-side-effects-why-harmless-reads-are-not">Read side effects: why "harmless" reads are not</h2>
+<p>Some registers change state when read. On many UARTs, reading the data register removes a byte from the receive FIFO; on some timers, reading a status register clears pending flags. That has two consequences:</p>
+<ul>
+<li>A debugger's memory view that refreshes a peripheral region can silently consume data. If RX bytes "disappear" only while debugging, check your watch windows.</li>
+<li>Code like <code>if (UART1->DR == 'q' || UART1->DR == 'Q')</code> performs <em>two</em> reads and consumes two bytes. Read once into a local variable, then test the local.</li>
+</ul>
+
+<h2 id="what-volatile-does-not-do">What volatile does not do</h2>
+<p>This is where most real bugs live. <code>volatile</code> constrains the <em>compiler</em>. It says nothing to the CPU's memory system or to other cores.</p>
+<table>
+<thead><tr><th>Problem</th><th>Does volatile solve it?</th><th>What to use instead</th></tr></thead>
+<tbody>
+<tr><td>Compiler caching a register in a CPU register</td><td>Yes</td><td>—</td></tr>
+<tr><td>Read-modify-write racing with an ISR</td><td>No. <code>reg |= x</code> is still load, OR, store.</td><td>Disable interrupts around it, or use set/clear registers</td></tr>
+<tr><td>Sharing a counter between two cores</td><td>No. No atomicity, no inter-core ordering.</td><td>C11 <code>_Atomic</code>, RTOS primitives, kernel atomics</td></tr>
+<tr><td>CPU reordering a buffer write before a "start DMA" register write</td><td>No. Volatile only orders volatile accesses, and the CPU may still reorder.</td><td>A memory barrier (<code>__DMB()</code>, <code>dma_wmb()</code>)</td></tr>
+<tr><td>Stale data in the data cache after DMA</td><td>No</td><td>Cache maintenance or the OS DMA API</td></tr>
+</tbody>
+</table>
+
+<div class="pitfall"><strong>Pitfall: the descriptor-then-doorbell race</strong>
+<p>You fill a DMA descriptor in normal RAM, then write the device's "go" register. The doorbell write is volatile; the descriptor writes are not. Both the compiler and an out-of-order CPU may make the doorbell visible to the device before the descriptor. Put a write barrier between them, and on non-coherent systems clean the cache lines first.</p></div>
+
+<h2 id="sharing-variables-with-an-interrupt-handler">Sharing variables with an interrupt handler</h2>
+<p>A flag set in an ISR and polled in the main loop must be <code>volatile</code>, for the same reason as a status register: from the main loop's point of view it changes "by itself".</p>
+<pre><code class="language-c">static volatile bool    rx_ready;
+static volatile uint8_t rx_byte;
+
+void USART1_IRQHandler(void)
+{
+    rx_byte  = (uint8_t)UART1-&gt;DR;   /* reading DR also clears RXNE */
+    rx_ready = true;
+}
+
+int main(void)
+{
+    for (;;) {
+        if (rx_ready) {
+            uint8_t b = rx_byte;     /* copy before clearing the flag */
+            rx_ready = false;
+            handle(b);
+        }
+    }
+}</code></pre>
+<p>This is safe on a single core because a 32-bit aligned access is atomic on the architectures you are likely to use, and there is one writer per field. As soon as the shared state is wider than one word, or both sides modify it, you need a critical section. <code>volatile</code> alone will not give you one.</p>
+
+<h2 id="in-the-linux-kernel-don-t-use-volatile">In the Linux kernel: don't use volatile</h2>
+<p>Kernel code does not declare register pointers <code>volatile</code>. Instead, it maps the region with <code>ioremap()</code> or <code>devm_platform_ioremap_resource()</code> and uses accessors:</p>
+<pre><code class="language-c">u32 sr = readl(base + UART_SR);      /* includes the ordering guarantees I/O needs */
+writel(c, base + UART_DR);
+writel_relaxed(val, base + REG);     /* no barrier, for hot paths you reason about */</code></pre>
+<p>The accessors handle volatility, endianness and the barriers each architecture needs. The kernel's documentation ("Why the volatile type class should not be used") explains that <code>volatile</code> on shared data usually hides a missing lock rather than fixing it.</p>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Use <code>volatile</code> for memory-mapped registers and for single-word flags shared with an ISR. Never rely on it for atomicity, for ordering between CPU and device, or for ordering between cores. Those need critical sections, atomics and barriers.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn next" href="c-bit-manipulation-registers.html"><small>Next in C for embedded</small><span>Bit Manipulation for Hardware Registers in C</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

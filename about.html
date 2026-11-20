@@ -1,2 +1,55 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="About LowLevel Labs: practical notes on embedded software, firmware, Linux internals, and processor architecture."><title>About — LowLevel Labs</title><link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css?v=20261022-premium-lab"><script defer src="script.js"></script></head><body><header class="site-header"><div class="container nav-wrap"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a><button class="menu-toggle" id="menuToggle" aria-label="Open navigation" aria-expanded="false">☰</button><nav class="nav-links" id="navLinks"><a href="index.html">Home</a><a href="articles.html">Articles</a><a href="projects.html">Projects</a><a href="about.html" class="current">About</a><a href="contact.html">Contact</a></nav></div></header><main class="container section"><div class="eyebrow">ABOUT LOWLEVEL LABS</div><h1>Curiosity below the abstraction.</h1><p class="hero-copy">A technical knowledge space for engineers who want to understand how systems work beneath the APIs.</p><div class="article-content"><h2>Hardware to software</h2><p>LowLevel Labs explores embedded software, Linux internals, firmware, processor architecture, hardware interfaces, and hands-on debugging. The goal is to connect theory with the behavior engineers see on real boards, in registers, on buses, and in kernel logs.</p><h2>Learn by tracing. Build by testing.</h2><p>Articles focus on explaining not only what a subsystem does, but why it behaves that way, how to debug it, and what trade-offs matter in real systems.</p><h2>Topics covered</h2><ul><li>Embedded C, firmware, bootloaders, and BSP development</li><li>Linux kernel and device-driver development</li><li>Processor architecture, memory systems, and cache coherency</li><li>Interrupts, DMA, multicore communication, and reliability</li><li>Hardware bring-up and practical debugging methods</li></ul><p class="content-note">UNDERSTAND · EXPERIMENT · DOCUMENT</p></div></main>><footer class="site-footer"><div class="container footer-inner"><a class="brand footer-brand" href="index.html"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a><p>Technical notes on embedded systems.</p><div class="footer-links"><a href="articles.html">Articles</a><a href="about.html">About</a><a href="contact.html">Contact</a></div><small class="copyright">© <span id="year">2026</span> LowLevel Labs</small></div></footer><!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script><!-- End Cloudflare Web Analytics -->
-</body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About LowLevel Labs | LowLevel Labs</title>
+<meta name="description" content="LowLevel Labs is a technical journal about embedded firmware, Linux device drivers, C, assembly, CPU internals and RTOS.">
+<link rel="canonical" href="https://lowlevellabs.in/about.html">
+<meta property="og:title" content="About LowLevel Labs"><meta property="og:description" content="LowLevel Labs is a technical journal about embedded firmware, Linux device drivers, C, assembly, CPU internals and RTOS.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/about.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=20261120">
+
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="articles.html">Articles</a><a href="topics/index.html">Topics</a><a href="projects.html">Guides</a><a href="about.html" aria-current="page">About</a><a href="contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<section class="page-head simple"><div class="wrap">
+<h1>About LowLevel Labs</h1><p class="lede">A technical journal for engineers who want to know what actually happens between the register and the API.</p></div></section>
+<section class="simple"><div class="wrap"><div class="prose"><h2>Why this site exists</h2>
+<p>Most documentation tells you which function to call. LowLevel Labs explains what that call does underneath: which bus transaction it starts, which cache line it touches, which context it runs in, and what breaks when you get it wrong.</p>
+<p>Every article aims for three things: a clear mental model, a diagram that makes the model visible, and code or commands you can try on real hardware or an emulator.</p>
+<h2>What's covered</h2>
+<ul>
+<li><strong>Embedded firmware</strong>: startup code, linker scripts, interrupts, peripherals and bring-up.</li>
+<li><strong>Linux device drivers</strong>: the driver model, Device Tree, character devices, ioctl and locking.</li>
+<li><strong>C and assembly</strong>: the parts of the language that touch hardware, ARM and x86-64 calling conventions.</li>
+<li><strong>CPU internals</strong>: pipelines, caches, coherence, virtual memory and multicore communication.</li>
+<li><strong>RTOS and VxWorks</strong>: scheduling, synchronization, priority inversion and VxWorks architecture.</li>
+<li><strong>Boot and platform</strong>: BIOS, UEFI, partition tables and the path from reset to the kernel.</li>
+</ul>
+<h2>A note on accuracy</h2>
+<p>Low-level behaviour depends on the exact core, SoC, kernel version and toolchain. Articles say where behaviour is implementation-defined, and the reference manual for your part always wins. If you spot an error, please <a href="contact.html">get in touch</a> so it can be fixed.</p>
+</div></div></section>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="topics/boot.html">Boot & platform</a></li><li><a href="topics/firmware.html">Embedded firmware</a></li><li><a href="topics/c.html">C for embedded</a></li><li><a href="topics/asm.html">Assembly</a></li><li><a href="topics/cpu.html">CPU internals</a></li><li><a href="topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="articles.html">All articles</a></li><li><a href="projects.html">Guides &amp; exercises</a></li><li><a href="about.html">About</a></li><li><a href="contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+
+<script src="script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

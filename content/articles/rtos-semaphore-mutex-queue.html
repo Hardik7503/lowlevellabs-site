@@ -1,0 +1,130 @@
+<!--meta
+title: Semaphore, Mutex or Queue? Choosing RTOS Primitives
+description: When to use a binary semaphore, a counting semaphore, a mutex, a message queue or a task notification, with FreeRTOS examples and the ISR rules that go with them.
+topic: rtos
+date: 2026-11-20
+read: 9 min read
+order: 10
+lede: Every RTOS gives you the same small toolbox. Most synchronization bugs come from picking the wrong tool, not from using the right one badly.
+-->
+<h2>Three different jobs</h2>
+<p>RTOS primitives solve three distinct problems. Name the problem first, and the primitive follows.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 210" role="img" aria-label="Three columns: signalling with a semaphore, mutual exclusion with a mutex, and data transfer with a queue">
+<rect class="sg" x="20" y="20" width="200" height="170" rx="8"/><text class="h" x="36" y="46">Signal an event</text>
+<rect class="b" x="40" y="70" width="70" height="30" rx="4"/><text class="s" x="58" y="90">ISR</text>
+<path class="ls" d="M110 85h40"/><circle class="fs" cx="160" cy="85" r="7"/>
+<path class="ls" d="M167 85h0M160 92v30"/><rect class="b" x="125" y="122" width="70" height="30" rx="4"/><text class="s" x="140" y="142">Task</text>
+<text class="m s" x="36" y="178">binary semaphore</text>
+<rect class="cu" x="240" y="20" width="200" height="170" rx="8"/><text class="h" x="256" y="46">Protect shared data</text>
+<rect class="b" x="256" y="70" width="60" height="30" rx="4"/><text class="s" x="266" y="90">Task A</text>
+<rect class="b" x="364" y="70" width="60" height="30" rx="4"/><text class="s" x="374" y="90">Task B</text>
+<rect class="ink" x="300" y="120" width="80" height="34" rx="4"/><text class="s" x="318" y="142">config</text>
+<path class="lc" d="M286 100l26 20M394 100l-26 20"/>
+<text class="m s" x="256" y="178">mutex (one owner)</text>
+<rect class="wn" x="460" y="20" width="200" height="170" rx="8"/><text class="h" x="476" y="46">Move data</text>
+<rect class="b" x="476" y="70" width="60" height="30" rx="4"/><text class="s" x="484" y="90">Producer</text>
+<g transform="translate(546,74)"><rect class="b" x="0" y="0" width="16" height="22"/><rect class="b" x="16" y="0" width="16" height="22"/><rect class="b" x="32" y="0" width="16" height="22"/></g>
+<rect class="b" x="560" y="122" width="76" height="30" rx="4"/><text class="s" x="568" y="142">Consumer</text>
+<path class="ln" d="M570 96v26"/>
+<text class="m s" x="476" y="178">message queue</text>
+</svg><figcaption>Signalling, mutual exclusion and data transfer are different problems with different primitives.</figcaption></figure>
+
+<h2>Binary semaphore: "it happened"</h2>
+<p>A binary semaphore is a flag with a wait queue. One side gives it, the other takes it and blocks until it is available. It has <strong>no owner</strong>: the giver and the taker are usually different contexts. The canonical use is deferring work from an interrupt to a task.</p>
+```c
+static SemaphoreHandle_t rxDone;
+
+void DMA1_Stream5_IRQHandler(void)
+{
+    BaseType_t woken = pdFALSE;
+    clear_dma_flags();
+    xSemaphoreGiveFromISR(rxDone, &woken);
+    portYIELD_FROM_ISR(woken);     /* switch now if a higher-priority task woke */
+}
+
+void rxTask(void *arg)
+{
+    for (;;) {
+        if (xSemaphoreTake(rxDone, pdMS_TO_TICKS(100)) == pdTRUE)
+            parse_frame();
+        else
+            report_timeout();
+    }
+}
+
+/* setup: rxDone = xSemaphoreCreateBinary(); */
+```
+<p>If the event fires twice before the task runs, the second give is lost: a binary semaphore counts to one. If you must not lose events, use a counting semaphore or a queue.</p>
+
+<h2>Counting semaphore: "how many are available"</h2>
+<p>A counting semaphore holds a count. Take decrements it, blocking at zero; give increments it. Use it to count events that may arrive in bursts, or to guard a pool of identical resources such as eight DMA descriptors.</p>
+```c
+SemaphoreHandle_t freeBufs = xSemaphoreCreateCounting(8, 8);   /* max, initial */
+
+xSemaphoreTake(freeBufs, portMAX_DELAY);   /* reserve one buffer  */
+/* ... use a buffer from the pool ... */
+xSemaphoreGive(freeBufs);                  /* return it           */
+```
+<p>The semaphore only counts. You still need a way to pick <em>which</em> buffer, protected by its own lock or by a queue of free buffer pointers.</p>
+
+<h2>Mutex: "only one at a time"</h2>
+<p>A mutex looks like a binary semaphore but adds <strong>ownership</strong>: only the task that took it may give it back. Ownership is what enables priority inheritance (see <a href="rtos-priority-inversion.html">priority inversion</a>), recursive locking and error checking.</p>
+```c
+static SemaphoreHandle_t i2cLock;    /* = xSemaphoreCreateMutex(); */
+
+int sensor_read(uint8_t reg, uint8_t *val)
+{
+    if (xSemaphoreTake(i2cLock, pdMS_TO_TICKS(20)) != pdTRUE)
+        return -ETIMEDOUT;
+    int rc = i2c_xfer(SENSOR_ADDR, &reg, 1, val, 1);
+    xSemaphoreGive(i2cLock);
+    return rc;
+}
+```
+<div class="pitfall"><strong>Pitfall: mutexes in interrupts</strong>
+<p>Never take or give a mutex from an ISR. An ISR is not a task, so it cannot own anything, cannot be boosted and must never block. FreeRTOS does not provide <code>FromISR</code> variants for mutexes for exactly this reason.</p></div>
+
+<h2>Queue: "here is the data"</h2>
+<p>A queue copies fixed-size items into a ring buffer owned by the kernel. It synchronizes and transfers data in one step: the consumer blocks until an item arrives, and the producer blocks (or fails) when the queue is full. Because data is copied, producer and consumer never share memory, so no extra lock is needed.</p>
+```c
+typedef struct { uint32_t ts; int16_t x, y, z; } accel_t;
+QueueHandle_t accelQ = xQueueCreate(16, sizeof(accel_t));
+
+/* producer task (from an ISR use xQueueSendFromISR) */
+accel_t s = read_accel();
+if (xQueueSend(accelQ, &s, 0) != pdTRUE)
+    dropped++;                      /* queue full: count it, don't block */
+
+/* consumer */
+accel_t r;
+while (xQueueReceive(accelQ, &r, portMAX_DELAY) == pdTRUE)
+    filter_update(&r);
+```
+<p>For large payloads, queue a pointer to a buffer from a pool instead of the payload itself, and make the ownership hand-off explicit: whoever holds the pointer owns the buffer.</p>
+
+<h2>Task notifications: the lightweight option</h2>
+<p>FreeRTOS also gives every task a built-in notification value. <code>xTaskNotifyGive()</code> and <code>ulTaskNotifyTake()</code> behave like a counting semaphore aimed at one specific task, with less RAM and faster execution than a separate semaphore object. They are a good default for "ISR wakes exactly one known task". Other RTOSes have equivalents, such as event flags in VxWorks and ThreadX.</p>
+
+<h2>Decision table</h2>
+<table>
+<thead><tr><th>You need to…</th><th>Use</th><th>Avoid</th></tr></thead>
+<tbody>
+<tr><td>Wake a task when an interrupt fires</td><td>Binary semaphore or task notification</td><td>Polling a global flag</td></tr>
+<tr><td>Not lose bursty events</td><td>Counting semaphore or queue</td><td>Binary semaphore</td></tr>
+<tr><td>Protect a shared peripheral or structure</td><td>Mutex with priority inheritance</td><td>Binary semaphore, disabling interrupts for long</td></tr>
+<tr><td>Pass samples or commands between tasks</td><td>Queue</td><td>Shared global plus a mutex</td></tr>
+<tr><td>Guard a short update shared with an ISR</td><td>Critical section (<code>taskENTER_CRITICAL()</code>)</td><td>Mutex</td></tr>
+<tr><td>Wait for several conditions at once</td><td>Event group or event flags</td><td>Several nested semaphore takes</td></tr>
+</tbody>
+</table>
+
+<h2>Rules that prevent most bugs</h2>
+<ul>
+<li><strong>Always use timeouts</strong> during development, and log when they expire. <code>portMAX_DELAY</code> turns a bug into a silent hang.</li>
+<li><strong>Only the <code>FromISR</code> APIs from interrupts</strong>, and respect <code>configMAX_SYSCALL_INTERRUPT_PRIORITY</code> on Cortex-M: ISRs above that priority must not call any RTOS API.</li>
+<li><strong>Lock in a fixed global order</strong> when a task needs two mutexes, or deadlock is only a matter of timing.</li>
+<li><strong>Keep the locked region small.</strong> Copy data out under the lock, process it after releasing.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Semaphores signal, mutexes protect, queues move data. Choose by the job, use the ISR-safe variants from interrupts, and never use a semaphore where you need an owner.</p></div>

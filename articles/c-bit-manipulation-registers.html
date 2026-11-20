@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bit Manipulation for Hardware Registers in C | LowLevel Labs</title>
+<meta name="description" content="Masks, shifts and field macros for register access, the read-modify-write race, write-1-to-clear flags, set/clear registers, and why C bit-fields are a poor fit for hardware.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/c-bit-manipulation-registers.html">
+<meta property="og:title" content="Bit Manipulation for Hardware Registers in C"><meta property="og:description" content="Masks, shifts and field macros for register access, the read-modify-write race, write-1-to-clear flags, set/clear registers, and why C bit-fields are a poor fit for hardware.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/c-bit-manipulation-registers.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Bit Manipulation for Hardware Registers in C", "description": "Masks, shifts and field macros for register access, the read-modify-write race, write-1-to-clear flags, set/clear registers, and why C bit-fields are a poor fit for hardware.", "datePublished": "2026-11-20", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/c.html">C for embedded</a></div>
+<h1>Bit Manipulation for Hardware Registers in C</h1>
+<p class="lede">Configuring a peripheral is mostly setting and clearing bits in 32-bit registers. The C is short, but there are about five ways to get it subtly wrong.</p>
+<div class="byline"><span>9 min read</span><span>20 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#the-four-basic-operations">The four basic operations</a></li><li><a href="#multi-bit-fields">Multi-bit fields</a></li><li><a href="#the-read-modify-write-race">The read-modify-write race</a></li><li><a href="#write-1-to-clear-status-registers">Write-1-to-clear status registers</a></li><li><a href="#why-not-c-bit-fields">Why not C bit-fields?</a></li><li><a href="#a-few-useful-idioms">A few useful idioms</a></li></ol></aside>
+<article class="prose">
+<h2 id="the-four-basic-operations">The four basic operations</h2>
+<p>Every register operation reduces to these, applied with a <strong>mask</strong> that has ones in the bit positions you care about:</p>
+<pre><code class="language-c">reg |=  mask;          /* set bits     */
+reg &amp;= ~mask;          /* clear bits   */
+reg ^=  mask;          /* toggle bits  */
+if (reg &amp; mask) { }    /* test bits    */</code></pre>
+<p>Build masks from <code>1u</code>, never <code>1</code>. <code>1 &lt;&lt; 31</code> shifts into the sign bit of a signed <code>int</code>, which is undefined behaviour in C before C23, and <code>1 &lt;&lt; 32</code> is undefined in every version. Use unsigned constants of the register's width.</p>
+<pre><code class="language-c">#define BIT(n)            (1u &lt;&lt; (n))
+#define GENMASK(h, l)     ((~0u &gt;&gt; (31 - (h))) &amp; (~0u &lt;&lt; (l)))   /* bits h..l, 32-bit */</code></pre>
+<h2 id="multi-bit-fields">Multi-bit fields</h2>
+<p>Most configuration lives in fields several bits wide. Writing a field means clearing all of its bits, then OR-ing in the new value shifted into place.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 190" role="img" aria-label="A 32-bit control register with a 3-bit prescaler field at bits 6 to 4 being cleared and then written">
+<g transform="translate(20,30)">
+<text class="m s" x="0" y="-8">CR1 (bits 15..0 shown)</text>
+<g>
+<rect class="b" x="0" y="0" width="36" height="34"/><rect class="b" x="36" y="0" width="36" height="34"/><rect class="b" x="72" y="0" width="36" height="34"/><rect class="b" x="108" y="0" width="36" height="34"/>
+<rect class="b" x="144" y="0" width="36" height="34"/><rect class="b" x="180" y="0" width="36" height="34"/><rect class="b" x="216" y="0" width="36" height="34"/><rect class="b" x="252" y="0" width="36" height="34"/>
+<rect class="b" x="288" y="0" width="36" height="34"/>
+<rect class="cu" x="324" y="0" width="108" height="34"/><text class="m" x="352" y="22">PSC</text>
+<rect class="b" x="432" y="0" width="36" height="34"/><rect class="b" x="468" y="0" width="36" height="34"/><rect class="b" x="504" y="0" width="36" height="34"/>
+<rect class="sg" x="540" y="0" width="36" height="34"/><text class="m s" x="548" y="22">EN</text>
+</g>
+<text class="m s" x="8" y="52">15</text><text class="m s" x="336" y="52">6</text><text class="m s" x="408" y="52">4</text><text class="m s" x="554" y="52">0</text>
+<text class="m s" x="0" y="90">1. reg &amp; ~PSC_MASK      clear bits 6..4</text>
+<text class="m s" x="0" y="112">2. (val &lt;&lt; PSC_SHIFT) &amp; PSC_MASK   position and limit</text>
+<text class="m s" x="0" y="134">3. OR them, write back once</text>
+</g>
+</svg><figcaption>Updating a 3-bit field. Masking the shifted value stops an out-of-range <code>val</code> from spilling into neighbouring bits.</figcaption></figure>
+<pre><code class="language-c">#define CR1_EN          BIT(0)
+#define CR1_PSC_SHIFT   4
+#define CR1_PSC_MASK    GENMASK(6, 4)
+
+static inline uint32_t field_prep(uint32_t mask, uint32_t val)
+{
+    return (val &lt;&lt; __builtin_ctz(mask)) &amp; mask;      /* GCC/Clang: count trailing zeros */
+}
+static inline uint32_t field_get(uint32_t mask, uint32_t reg)
+{
+    return (reg &amp; mask) &gt;&gt; __builtin_ctz(mask);
+}
+
+void timer_set_prescaler(uint32_t psc)
+{
+    uint32_t v = TIM1-&gt;CR1;                 /* one read          */
+    v &amp;= ~CR1_PSC_MASK;
+    v |= field_prep(CR1_PSC_MASK, psc);
+    TIM1-&gt;CR1 = v;                          /* one write         */
+}</code></pre>
+<p>Note the local copy: one volatile read, edit in a register, one volatile write. Writing <code>TIM1-&gt;CR1 &amp;= ...; TIM1-&gt;CR1 |= ...;</code> performs two separate writes, and for a moment the hardware sees the field cleared to zero. For a prescaler that might be harmless; for a clock mux or a GPIO mode it can glitch an output. The Linux kernel provides the same helpers as <code>FIELD_PREP()</code> and <code>FIELD_GET()</code> in <code>&lt;linux/bitfield.h&gt;</code>.</p>
+
+<h2 id="the-read-modify-write-race">The read-modify-write race</h2>
+<p><code>GPIOA-&gt;ODR |= BIT(5)</code> looks atomic. It is three instructions: load, OR, store. If an interrupt runs between the load and the store and modifies another bit of the same register, the store writes back the stale value and silently undoes the ISR's change.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 170" role="img" aria-label="Timeline: main code loads ODR, ISR sets bit 3, main stores its stale copy and bit 3 is lost">
+<text class="m s" x="20" y="44">main</text><text class="m s" x="20" y="104">ISR</text>
+<rect class="b" x="90" y="28" width="120" height="26" rx="3"/><text class="m s" x="100" y="46">ldr  ODR=0x00</text>
+<rect class="cu" x="230" y="88" width="170" height="26" rx="3"/><text class="m s" x="240" y="106">ODR |= bit3 → 0x08</text>
+<rect class="b" x="420" y="28" width="110" height="26" rx="3"/><text class="m s" x="430" y="46">orr  →0x20</text>
+<rect class="wn" x="540" y="28" width="120" height="26" rx="3"/><text class="m s" x="550" y="46">str  ODR=0x20</text>
+<text class="s tc h" x="420" y="150">bit 3 lost: the ISR's write was overwritten</text>
+<path class="ln dash" d="M210 41h20v47M400 101h20V54"/>
+</svg><figcaption>A read-modify-write interrupted between its load and store loses the interrupt handler's update.</figcaption></figure>
+<p>Three ways out, best first:</p>
+<ol>
+<li><strong>Use hardware set/clear registers.</strong> Many peripherals provide them for exactly this reason. STM32 GPIO has <code>BSRR</code>: writing 1 to bit <em>n</em> sets pin <em>n</em>, writing 1 to bit <em>n+16</em> resets it, and zero bits are ignored. A single write, no read, no race.</li>
+<li><strong>Use bit-banding or atomic instructions</strong> where available. Cortex-M3/M4 bit-band aliases map each bit of SRAM and peripheral space to its own word; Cortex-M7 and M33 do not have bit-banding.</li>
+<li><strong>Disable interrupts</strong> around the sequence, saving and restoring the previous state.</li>
+</ol>
+<pre><code class="language-c">GPIOA-&gt;BSRR = BIT(5);           /* set PA5, atomically   */
+GPIOA-&gt;BSRR = BIT(5 + 16);      /* reset PA5, atomically */
+
+uint32_t primask = __get_PRIMASK();   /* CMSIS */
+__disable_irq();
+GPIOA-&gt;ODR ^= BIT(5);
+__set_PRIMASK(primask);               /* restore, don't blindly enable */</code></pre>
+<h2 id="write-1-to-clear-status-registers">Write-1-to-clear status registers</h2>
+<p>Interrupt status registers are often <strong>W1C</strong>: writing 1 to a bit clears that flag, writing 0 leaves it alone. The intuitive code is wrong:</p>
+<pre><code class="language-c">DMA-&gt;ISR |= DMA_ISR_TCIF;    /* WRONG: reads all pending flags, writes them all back as 1s,
+                                clearing every pending flag, not just TCIF */
+DMA-&gt;ISR  = DMA_ISR_TCIF;    /* right: write only the bit you mean to clear */</code></pre>
+<p>The <code>|=</code> version can silently discard an error flag that arrived at the same time, which then never gets handled. Always check the register's access type in the reference manual: RW, RO, W1C, W1S, RC (read-to-clear) and WO all appear in real devices.</p>
+
+<h2 id="why-not-c-bit-fields">Why not C bit-fields?</h2>
+<p>C lets you write <code>struct { uint32_t en:1; uint32_t :3; uint32_t psc:3; } cr1;</code>, which looks like a perfect register description. Avoid it for hardware:</p>
+<ul>
+<li>The order in which bit-fields are allocated within a unit, and whether a field may straddle units, is <strong>implementation-defined</strong>. Portability across compilers and endianness is not guaranteed.</li>
+<li>Every assignment to a field is a hidden read-modify-write, sometimes of a different access width than the register supports. Some peripherals fault on byte access to 32-bit registers.</li>
+<li>Updating two fields becomes two separate writes, with an intermediate state visible to the hardware.</li>
+</ul>
+<p>Explicit masks and shifts produce exactly the accesses you write. That predictability is worth the extra characters.</p>
+
+<h2 id="a-few-useful-idioms">A few useful idioms</h2>
+<pre><code class="language-c">x &amp; (x - 1)          /* clear the lowest set bit                      */
+x &amp; -x               /* isolate the lowest set bit (x unsigned)        */
+(x &amp; (x - 1)) == 0   /* true if x is a power of two (or zero)          */
+__builtin_ctz(x)     /* index of lowest set bit; undefined for x == 0  */
+__builtin_popcount(x)/* number of set bits                             */
+(x + 3u) &amp; ~3u       /* round up to a multiple of 4                    */</code></pre>
+<div class="key"><strong>Key takeaway</strong>
+<p>Use unsigned masks, update fields with one read and one write, prefer set/clear registers over read-modify-write, write exactly the bits you mean to W1C registers, and keep C bit-fields away from hardware.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="c-volatile-memory-mapped-io.html"><small>Previous in C for embedded</small><span>volatile and Memory-Mapped I/O in Embedded C</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

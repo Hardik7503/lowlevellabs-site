@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Priority Inversion and How RTOSes Prevent It | LowLevel Labs</title>
+<meta name="description" content="How a low-priority task can block a high-priority one indefinitely, what happened on Mars Pathfinder, and how priority inheritance and priority ceiling fix it.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/rtos-priority-inversion.html">
+<meta property="og:title" content="Priority Inversion and How RTOSes Prevent It"><meta property="og:description" content="How a low-priority task can block a high-priority one indefinitely, what happened on Mars Pathfinder, and how priority inheritance and priority ceiling fix it.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/rtos-priority-inversion.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Priority Inversion and How RTOSes Prevent It", "description": "How a low-priority task can block a high-priority one indefinitely, what happened on Mars Pathfinder, and how priority inheritance and priority ceiling fix it.", "datePublished": "2026-11-20", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/rtos.html">RTOS & VxWorks</a></div>
+<h1>Priority Inversion and How RTOSes Prevent It</h1>
+<p class="lede">In a preemptive priority scheduler the highest-priority ready task always runs. Add one shared mutex and that guarantee quietly breaks. This is priority inversion, and it once reset a spacecraft on Mars.</p>
+<div class="byline"><span>10 min read</span><span>20 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#the-scheduling-rule">The scheduling rule</a></li><li><a href="#bounded-inversion-is-normal">Bounded inversion is normal</a></li><li><a href="#unbounded-inversion-is-the-bug">Unbounded inversion is the bug</a></li><li><a href="#mars-pathfinder-1997">Mars Pathfinder, 1997</a></li><li><a href="#fix-1-priority-inheritance">Fix 1: priority inheritance</a></li><li><a href="#fix-2-priority-ceiling">Fix 2: priority ceiling</a></li><li><a href="#turning-it-on-in-practice">Turning it on in practice</a></li><li><a href="#design-rules-that-matter-more-than-the-protocol">Design rules that matter more than the protocol</a></li></ol></aside>
+<article class="prose">
+<h2 id="the-scheduling-rule">The scheduling rule</h2>
+<p>Most real-time operating systems, including VxWorks, FreeRTOS, Zephyr and ThreadX, use <strong>fixed-priority preemptive scheduling</strong>. Every task has a priority. Whenever a higher-priority task becomes ready (an interrupt gives it a semaphore, a timer expires), the scheduler preempts whatever is running and switches to it immediately.</p>
+<p>That rule is what makes response times analysable: a high-priority task only waits for tasks of equal or higher priority, plus interrupt handlers. Priority inversion is any situation where a high-priority task ends up waiting for a <em>lower</em>-priority one.</p>
+
+<h2 id="bounded-inversion-is-normal">Bounded inversion is normal</h2>
+<p>Suppose a low-priority task L holds a mutex protecting a shared buffer, and high-priority task H wants it. H blocks until L releases it. That is inversion, but it is <strong>bounded</strong>: H waits at most as long as L's critical section, which you can measure and keep short. Every system with shared resources has some of this.</p>
+
+<h2 id="unbounded-inversion-is-the-bug">Unbounded inversion is the bug</h2>
+<p>Now add a medium-priority task M that does not use the mutex at all.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 250" role="img" aria-label="Timeline showing low-priority task L taking a mutex, high-priority task H blocking on it, and medium task M preempting L so H waits indefinitely">
+<text class="m s" x="20" y="54">H (high)</text><text class="m s" x="20" y="114">M (medium)</text><text class="m s" x="20" y="174">L (low)</text>
+<path class="ln" d="M110 60h550M110 120h550M110 180h550"/>
+<rect class="wn" x="110" y="162" width="80" height="18"/><text class="s" x="120" y="156">takes mutex</text>
+<rect class="cu" x="190" y="42" width="40" height="18"/><text class="s" x="196" y="36">runs</text>
+<path class="ln dash" d="M230 51h70"/><text class="s" x="236" y="80">blocks on mutex</text>
+<rect class="wn" x="230" y="162" width="40" height="18"/>
+<rect class="sg" x="270" y="102" width="270" height="18"/><text class="s" x="330" y="96">M preempts L and runs for as long as it likes</text>
+<path class="ln dash" d="M300 51h240"/><text class="tc s h" x="330" y="36">H waits on M, which has lower priority</text>
+<rect class="wn" x="540" y="162" width="30" height="18"/><text class="s" x="520" y="200">gives mutex</text>
+<rect class="cu" x="570" y="42" width="80" height="18"/><text class="s" x="580" y="36">finally runs</text>
+<path class="ln" d="M110 220h550"/><text class="s" x="600" y="238">time →</text>
+</svg><figcaption>Unbounded priority inversion. Once L is preempted while holding the mutex, H's waiting time depends on M, a task it has no relationship with.</figcaption></figure>
+<ol>
+<li>L takes the mutex.</li>
+<li>H becomes ready, preempts L, tries to take the mutex and blocks.</li>
+<li>M becomes ready. It outranks L, so it preempts L.</li>
+<li>L cannot run, so it cannot release the mutex, so H cannot run. H now waits for M to finish, and for any other medium-priority task that shows up.</li>
+</ol>
+<p>H's worst-case latency is no longer bounded by a short critical section. It depends on the CPU load of unrelated tasks.</p>
+
+<h2 id="mars-pathfinder-1997">Mars Pathfinder, 1997</h2>
+<p>Pathfinder ran VxWorks. A high-priority bus-management task and a low-priority meteorological data task shared an information bus protected by a mutex. Medium-priority communications tasks occasionally ran long enough while the low-priority task held the mutex that the bus task missed its deadline. A watchdog noticed and reset the whole system, repeatedly.</p>
+<p>JPL engineers reproduced it on a ground replica using the system's trace logging. The mutex had been created without priority inheritance enabled. They uploaded a small patch that switched it on, and the resets stopped. The lesson engineers still repeat: the fix existed in the RTOS all along, it just was not turned on.</p>
+
+<h2 id="fix-1-priority-inheritance">Fix 1: priority inheritance</h2>
+<p>With <strong>priority inheritance</strong>, when H blocks on a mutex held by L, the kernel temporarily raises L's priority to H's. M can no longer preempt L. L finishes its critical section quickly, releases the mutex, drops back to its own priority, and H runs.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 210" role="img" aria-label="Timeline with priority inheritance: L is boosted to H's priority, finishes its critical section, and H runs before M">
+<text class="m s" x="20" y="54">H (high)</text><text class="m s" x="20" y="114">M (medium)</text><text class="m s" x="20" y="174">L (low)</text>
+<path class="ln" d="M110 60h550M110 120h550M110 180h550"/>
+<rect class="wn" x="110" y="162" width="80" height="18"/>
+<rect class="cu" x="190" y="42" width="40" height="18"/>
+<rect class="cu" x="230" y="162" width="70" height="18"/><text class="s tc h" x="214" y="200">L boosted to H's priority</text>
+<rect class="cu" x="300" y="42" width="110" height="18"/><text class="s" x="306" y="36">H gets mutex, runs</text>
+<rect class="sg" x="410" y="102" width="200" height="18"/><text class="s" x="440" y="96">M runs after H</text>
+<path class="ln dash" d="M260 120v42"/><text class="s" x="268" y="140">M ready here, but cannot preempt</text>
+</svg><figcaption>Priority inheritance bounds H's wait to L's critical section. M runs only after H is done.</figcaption></figure>
+<p>Inheritance is transitive in good implementations: if L is itself blocked on another mutex held by an even lower task, the boost propagates down the chain.</p>
+
+<h2 id="fix-2-priority-ceiling">Fix 2: priority ceiling</h2>
+<p>With the <strong>priority ceiling protocol</strong> (immediate ceiling in its common form), each mutex is assigned a ceiling equal to the highest priority of any task that will ever lock it. Any task that takes the mutex immediately runs at the ceiling until it releases it.</p>
+<table>
+<thead><tr><th></th><th>Priority inheritance</th><th>Immediate priority ceiling</th></tr></thead>
+<tbody>
+<tr><td>When the boost happens</td><td>Only when a higher task actually blocks</td><td>Every time the mutex is taken</td></tr>
+<tr><td>Configuration</td><td>None, automatic</td><td>You must know every user's priority</td></tr>
+<tr><td>Deadlock between two mutexes</td><td>Still possible</td><td>Prevented, when ceilings are set correctly</td></tr>
+<tr><td>Blocking per job</td><td>Can be chained across several mutexes</td><td>At most one critical section</td></tr>
+<tr><td>Common in</td><td>VxWorks, FreeRTOS, Zephyr, POSIX <code>PTHREAD_PRIO_INHERIT</code></td><td>OSEK/AUTOSAR, Ada, POSIX <code>PTHREAD_PRIO_PROTECT</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="turning-it-on-in-practice">Turning it on in practice</h2>
+<h3>VxWorks</h3>
+<pre><code class="language-c">SEM_ID busLock = semMCreate(SEM_Q_PRIORITY | SEM_INVERSION_SAFE | SEM_DELETE_SAFE);
+
+semTake(busLock, WAIT_FOREVER);
+/* short critical section */
+semGive(busLock);</code></pre>
+<p><code>SEM_INVERSION_SAFE</code> enables inheritance and requires <code>SEM_Q_PRIORITY</code>, so that the highest-priority waiter is the one that gets the mutex next.</p>
+<h3>FreeRTOS</h3>
+<pre><code class="language-c">SemaphoreHandle_t lock = xSemaphoreCreateMutex();   /* mutexes inherit priority */
+
+if (xSemaphoreTake(lock, pdMS_TO_TICKS(10)) == pdTRUE) {
+    /* critical section */
+    xSemaphoreGive(lock);
+}</code></pre>
+<p>FreeRTOS mutexes implement inheritance; <strong>binary semaphores do not</strong>. Using <code>xSemaphoreCreateBinary()</code> as a lock is a classic way to reintroduce the Pathfinder bug.</p>
+<h3>POSIX threads</h3>
+<pre><code class="language-c">pthread_mutexattr_t a;
+pthread_mutexattr_init(&amp;a);
+pthread_mutexattr_setprotocol(&amp;a, PTHREAD_PRIO_INHERIT);
+pthread_mutex_init(&amp;lock, &amp;a);</code></pre>
+<h2 id="design-rules-that-matter-more-than-the-protocol">Design rules that matter more than the protocol</h2>
+<ul>
+<li><strong>Keep critical sections short and bounded.</strong> No blocking calls, no logging to slow devices, no waiting on other locks inside them.</li>
+<li><strong>Use a mutex, not a semaphore, for mutual exclusion.</strong> Only mutexes have an owner, and only an owner can be boosted.</li>
+<li><strong>Prefer message passing for cross-priority data.</strong> If H only needs the latest sample, a queue or double buffer avoids sharing a lock at all.</li>
+<li><strong>Trace it.</strong> Pathfinder was diagnosed from a trace. Tools such as VxWorks System Viewer, Tracealyzer or SEGGER SystemView show inversion as a gap where the high-priority task is blocked while a medium task runs.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Priority inversion is unavoidable when tasks share resources. Unbounded inversion is a design bug. Lock shared resources with an inheritance-capable mutex (or use ceilings), keep critical sections short, and verify with a trace.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="rtos-semaphore-mutex-queue.html"><small>Previous in RTOS & VxWorks</small><span>Semaphore, Mutex or Queue? Choosing RTOS Primitives</span></a><a class="pn next" href="vxworks-architecture-tasks.html"><small>Next in RTOS & VxWorks</small><span>VxWorks Architecture: Tasks, RTPs, BSPs and VxBus</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual Memory: MMU Page Walks and the TLB | LowLevel Labs</title>
+<meta name="description" content="How an MMU translates virtual addresses through multi-level page tables on AArch64 and x86-64, what the TLB caches, and what firmware and drivers must do when mappings change.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/virtual-memory-mmu-tlb.html">
+<meta property="og:title" content="Virtual Memory: MMU Page Walks and the TLB"><meta property="og:description" content="How an MMU translates virtual addresses through multi-level page tables on AArch64 and x86-64, what the TLB caches, and what firmware and drivers must do when mappings change.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/virtual-memory-mmu-tlb.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Virtual Memory: MMU Page Walks and the TLB", "description": "How an MMU translates virtual addresses through multi-level page tables on AArch64 and x86-64, what the TLB caches, and what firmware and drivers must do when mappings change.", "datePublished": "2026-11-20", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/cpu.html">CPU internals</a></div>
+<h1>Virtual Memory: MMU Page Walks and the TLB</h1>
+<p class="lede">Every load and store your program issues uses a virtual address. The MMU turns it into a physical one, checks permissions and attributes, and does it fast enough that you rarely notice. Until you write a bootloader, a kernel or a driver.</p>
+<div class="byline"><span>11 min read</span><span>20 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#what-translation-buys-you">What translation buys you</a></li><li><a href="#splitting-a-virtual-address">Splitting a virtual address</a></li><li><a href="#the-page-walk">The page walk</a></li><li><a href="#the-tlb">The TLB</a></li><li><a href="#keeping-the-tlb-honest">Keeping the TLB honest</a></li><li><a href="#what-this-means-in-practice">What this means in practice</a></li></ol></aside>
+<article class="prose">
+<h2 id="what-translation-buys-you">What translation buys you</h2>
+<ul>
+<li><strong>Isolation.</strong> Each process gets its own address space, and the kernel's memory is not accessible from user mode.</li>
+<li><strong>Flexibility.</strong> Contiguous virtual buffers can be backed by scattered physical pages, and pages can be loaded lazily or swapped.</li>
+<li><strong>Attributes per page.</strong> Each mapping says whether memory is executable, writable, cacheable or a device. For embedded work this last point matters most: a peripheral mapped as normal cacheable memory will misbehave.</li>
+</ul>
+
+<h2 id="splitting-a-virtual-address">Splitting a virtual address</h2>
+<p>With 4 KB pages and 48-bit virtual addresses, both AArch64 and x86-64 use the same shape: a 12-bit offset inside the page, and four 9-bit indexes, one per table level. Each table is one 4 KB page holding 512 eight-byte entries.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 140" role="img" aria-label="A 48-bit virtual address split into four 9-bit table indexes and a 12-bit page offset">
+<g transform="translate(20,30)">
+<rect class="b" x="0" y="0" width="80" height="44"/><text class="m s" x="12" y="27">sign ext</text>
+<rect class="cu" x="80" y="0" width="108" height="44"/><text class="m" x="98" y="27">L0 index</text>
+<rect class="sg" x="188" y="0" width="108" height="44"/><text class="m" x="206" y="27">L1 index</text>
+<rect class="wn" x="296" y="0" width="108" height="44"/><text class="m" x="314" y="27">L2 index</text>
+<rect class="cu" x="404" y="0" width="108" height="44"/><text class="m" x="422" y="27">L3 index</text>
+<rect class="ink" x="512" y="0" width="128" height="44"/><text class="m" x="540" y="27">offset</text>
+<text class="m s" x="10" y="-8">63:48</text><text class="m s" x="110" y="-8">47:39</text><text class="m s" x="218" y="-8">38:30</text><text class="m s" x="326" y="-8">29:21</text><text class="m s" x="434" y="-8">20:12</text><text class="m s" x="560" y="-8">11:0</text>
+<text class="s" x="80" y="70">x86-64 names: PML4, PDPT, PD, PT. Arm names: level 0 to 3.</text>
+<text class="s" x="80" y="90">Bits 63:48 must all equal bit 47, or the access faults.</text>
+</g>
+</svg><figcaption>A 48-bit virtual address with a 4 KB granule. 9 bits select one of 512 entries per level; 12 bits select a byte within the 4 KB page.</figcaption></figure>
+
+<h2 id="the-page-walk">The page walk</h2>
+<p>On a TLB miss, the hardware walks the tables. It starts from a base register: <code>TTBR0_EL1</code> or <code>TTBR1_EL1</code> on AArch64 (the low and high halves of the address space, typically user and kernel), and <code>CR3</code> on x86-64.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 250" role="img" aria-label="Four-level page walk from the base register through L0, L1, L2 and L3 tables to a physical page">
+<rect class="ink" x="20" y="100" width="90" height="40" rx="4"/><text class="m s" x="30" y="124">TTBR / CR3</text>
+<g transform="translate(140,40)"><rect class="b" x="0" y="0" width="90" height="160"/><rect class="cu" x="0" y="60" width="90" height="22"/><text class="m s" x="12" y="76">entry</text><text class="s" x="20" y="182">L0 table</text></g>
+<g transform="translate(260,40)"><rect class="b" x="0" y="0" width="90" height="160"/><rect class="sg" x="0" y="100" width="90" height="22"/><text class="m s" x="12" y="116">entry</text><text class="s" x="20" y="182">L1 table</text></g>
+<g transform="translate(380,40)"><rect class="b" x="0" y="0" width="90" height="160"/><rect class="wn" x="0" y="30" width="90" height="22"/><text class="m s" x="12" y="46">entry</text><text class="s" x="20" y="182">L2 table</text></g>
+<g transform="translate(500,40)"><rect class="b" x="0" y="0" width="90" height="160"/><rect class="cu" x="0" y="130" width="90" height="22"/><text class="m s" x="12" y="146">PTE</text><text class="s" x="20" y="182">L3 table</text></g>
+<rect class="sg" x="610" y="150" width="56" height="60" rx="4"/><text class="s" x="618" y="176">4 KB</text><text class="s" x="618" y="194">page</text>
+<path class="lc" d="M110 120h30M230 111c15 0 15 30 30 30M350 151c15 0 15-80 30-80M470 81c15 0 15 100 30 100M590 181h20"/>
+<text class="s" x="140" y="232">Each step: next table address from the entry + the next 9 index bits. A miss costs up to four memory reads.</text>
+</svg><figcaption>A full walk reads one entry per level. Entries at L1 or L2 may instead be <em>block</em> descriptors that map 1 GB or 2 MB directly, ending the walk early.</figcaption></figure>
+<p>The final entry holds the physical page number and the attributes: valid, read/write, user/kernel, execute-never, and memory type. On AArch64 the memory type is an index into <code>MAIR_EL1</code>, where you define types such as "Normal, write-back cacheable" and "Device-nGnRE" for registers.</p>
+
+<h2 id="the-tlb">The TLB</h2>
+<p>Four extra memory reads per access would be ruinous, so the MMU caches recent translations in the <strong>Translation Lookaside Buffer</strong>. Typical cores have small, fast L1 TLBs (tens of entries, split for instructions and data) backed by a larger unified L2 TLB with a thousand or more entries. Page-walk caches also keep upper-level entries so most misses do not need all four reads.</p>
+<p>TLB reach is entries × page size. A thousand 4 KB entries cover only 4 MB, which is why databases, DPDK and some firmware use <strong>huge pages</strong>: one 2 MB entry covers what 512 small ones would.</p>
+
+<h2 id="keeping-the-tlb-honest">Keeping the TLB honest</h2>
+<p>The TLB is <strong>not coherent with the page tables</strong>. If you change a page-table entry in memory, the CPU may keep using the old cached translation. Software must invalidate it explicitly.</p>
+<pre><code class="language-armasm">// AArch64: change one mapping for virtual address in x0 (kernel, EL1)
+    str     x1, [x2]            // write the new descriptor
+    dsb     ishst               // make the table write visible to the walker
+    lsr     x0, x0, #12
+    tlbi    vaae1is, x0         // invalidate this VA, all ASIDs, inner shareable
+    dsb     ish                 // wait for the invalidation to complete
+    isb                         // resynchronize the pipeline</code></pre>
+<pre><code class="language-x86asm">; x86-64: invalidate one page on this CPU
+    mov     [rbx], rax          ; write the new PTE
+    invlpg  [rdi]               ; flush the TLB entry for the address in rdi</code></pre>
+<p>On a multicore system other CPUs can hold the stale entry too. Arm's inner-shareable <code>tlbi ... is</code> variants broadcast in hardware; x86 kernels send an inter-processor interrupt so each core runs <code>invlpg</code> itself (a "TLB shootdown").</p>
+<h3>ASIDs and PCIDs</h3>
+<p>Switching processes would otherwise mean flushing the whole TLB. Instead, each entry is tagged with an address-space identifier (ASID on Arm, PCID on x86), so entries from several processes can coexist and a context switch only changes the current tag.</p>
+
+<h2 id="what-this-means-in-practice">What this means in practice</h2>
+<h3>Bootloaders and early kernel code</h3>
+<p>Code that turns the MMU on is running at a physical address when it executes the enabling write, and the very next instruction is fetched through translation. The standard trick is an <strong>identity mapping</strong> (virtual = physical) of that code, so execution continues seamlessly, followed by a jump to the high kernel address.</p>
+<h3>Drivers</h3>
+<p>A Linux driver never dereferences a physical register address. <code>ioremap()</code> creates a kernel virtual mapping with device memory attributes, and DMA buffers come from the DMA API, which knows both the CPU's virtual address and the device's bus address. A physical address from a datasheet in a pointer is a bug on any system with the MMU enabled.</p>
+<h3>Faults</h3>
+<p>A translation or permission failure raises a fault with an address register (<code>FAR_EL1</code> or <code>CR2</code>) and a syndrome (<code>ESR_EL1</code> or the page-fault error code). Most crashes you debug in kernel space start by decoding those two values.</p>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>The MMU splits a virtual address into table indexes, walks up to four levels, and caches the result in the TLB. Page tables carry memory attributes as well as addresses, and changing them requires explicit TLB invalidation with the right barriers.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="cpu-pipeline-hazards.html"><small>Previous in CPU internals</small><span>Inside a CPU Pipeline: Hazards, Forwarding and Branch Prediction</span></a><a class="pn next" href="armv7-vs-armv8-aarch64.html"><small>Next in CPU internals</small><span>Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spinlocks vs Mutexes in the Linux Kernel | LowLevel Labs</title>
+<meta name="description" content="Which kernel lock to use from process context, softirqs and hard interrupts, why you cannot sleep under a spinlock, the irqsave variants, and how PREEMPT_RT changes things.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/linux-kernel-locking-spinlock-mutex.html">
+<meta property="og:title" content="Spinlocks vs Mutexes in the Linux Kernel"><meta property="og:description" content="Which kernel lock to use from process context, softirqs and hard interrupts, why you cannot sleep under a spinlock, the irqsave variants, and how PREEMPT_RT changes things.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/linux-kernel-locking-spinlock-mutex.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Spinlocks vs Mutexes in the Linux Kernel", "description": "Which kernel lock to use from process context, softirqs and hard interrupts, why you cannot sleep under a spinlock, the irqsave variants, and how PREEMPT_RT changes things.", "datePublished": "2026-11-20", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/drivers.html">Linux device drivers</a></div>
+<h1>Spinlocks vs Mutexes in the Linux Kernel</h1>
+<p class="lede">Choosing a kernel lock is not a style preference. It follows directly from which contexts touch the data, and whether any of them can sleep.</p>
+<div class="byline"><span>10 min read</span><span>20 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#two-ways-to-wait">Two ways to wait</a></li><li><a href="#the-rule-everything-follows-from">The rule everything follows from</a></li><li><a href="#choosing-by-context">Choosing by context</a></li><li><a href="#comparison">Comparison</a></li><li><a href="#other-tools-you-will-meet">Other tools you will meet</a></li><li><a href="#preempt-rt-changes-the-implementation-not-the-rules">PREEMPT_RT changes the implementation, not the rules</a></li><li><a href="#let-the-tools-check-you">Let the tools check you</a></li></ol></aside>
+<article class="prose">
+<h2 id="two-ways-to-wait">Two ways to wait</h2>
+<p>When a lock is held by someone else, the waiter can either <strong>spin</strong> (loop on the CPU checking until it is free) or <strong>sleep</strong> (ask the scheduler to run something else and wake it when the lock is released).</p>
+<ul>
+<li>A <strong>spinlock</strong> spins. While a CPU holds one, preemption is disabled on that CPU. It is cheap when held briefly and can be used where sleeping is impossible, such as interrupt handlers.</li>
+<li>A <strong>mutex</strong> sleeps. It can protect long sections and sections that call functions which may sleep, but can only be used where sleeping is allowed: process context.</li>
+</ul>
+
+<h2 id="the-rule-everything-follows-from">The rule everything follows from</h2>
+<div class="key"><strong>Never sleep while holding a spinlock, and never take a sleeping lock in atomic context.</strong>
+<p>Atomic context includes hard interrupt handlers, softirqs and tasklets, timer callbacks, and any code holding a spinlock or running with preemption or interrupts disabled.</p></div>
+<p>If a thread sleeps while holding a spinlock, the scheduler may run another thread on the same CPU that tries to take the same lock. It spins forever, because the holder cannot run to release it. On a single CPU that is an instant deadlock.</p>
+<p>Functions that may sleep include <code>mutex_lock()</code>, <code>kmalloc(GFP_KERNEL)</code>, <code>copy_to_user()</code> and <code>copy_from_user()</code> (page faults), <code>msleep()</code>, <code>wait_event()</code> and most I²C and SPI transfer functions. With <code>CONFIG_DEBUG_ATOMIC_SLEEP</code> enabled, calling one in atomic context prints <em>"BUG: sleeping function called from invalid context"</em> with a stack trace. Leave it on in development kernels.</p>
+
+<h2 id="choosing-by-context">Choosing by context</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 280" role="img" aria-label="Decision flow: if any accessor runs in interrupt context use spin_lock_irqsave; if softirq only use spin_lock_bh; if all process context and may sleep use a mutex">
+<rect class="ink" x="200" y="12" width="280" height="44" rx="6"/><text x="222" y="39">Who accesses the shared data?</text>
+<path class="ln" d="M340 56v20M120 76h440M120 76v20M340 76v20M560 76v20"/>
+<rect class="wn" x="20" y="96" width="200" height="60" rx="6"/><text class="h" x="36" y="120">A hard IRQ handler</text><text class="s" x="36" y="140">plus anything else</text>
+<rect class="sg" x="240" y="96" width="200" height="60" rx="6"/><text class="h" x="256" y="120">Softirq / tasklet / timer</text><text class="s" x="256" y="140">plus process context</text>
+<rect class="cu" x="460" y="96" width="200" height="60" rx="6"/><text class="h" x="476" y="120">Process context only</text><text class="s" x="476" y="140">(syscalls, workqueues)</text>
+<path class="ln" d="M120 156v24M340 156v24M560 156v24"/>
+<rect class="b" x="20" y="180" width="200" height="84" rx="6"/><text class="m s" x="32" y="204">spin_lock_irqsave()</text><text class="s" x="32" y="226">in process context;</text><text class="m s" x="32" y="246">spin_lock() in the IRQ</text>
+<rect class="b" x="240" y="180" width="200" height="84" rx="6"/><text class="m s" x="252" y="204">spin_lock_bh()</text><text class="s" x="252" y="226">in process context;</text><text class="m s" x="252" y="246">spin_lock() in softirq</text>
+<rect class="b" x="460" y="180" width="200" height="84" rx="6"/><text class="m s" x="472" y="204">mutex_lock()</text><text class="s" x="472" y="226">if the section may sleep</text><text class="s" x="472" y="246">or is long; else spinlock</text>
+</svg><figcaption>The lock follows from the most restrictive context that touches the data.</figcaption></figure>
+
+<h3>Why the _irqsave variant</h3>
+<p>Suppose process context takes a plain <code>spin_lock()</code>, and an interrupt arrives on the <em>same CPU</em> whose handler takes the same lock. The handler spins, waiting for the process-context code to release the lock, but that code cannot run until the handler returns. Deadlock.</p>
+<p><code>spin_lock_irqsave()</code> disables local interrupts before taking the lock and saves the previous interrupt state in <code>flags</code>; <code>spin_unlock_irqrestore()</code> puts it back. The <code>_bh</code> variants do the same for softirqs, which also cannot preempt the holder.</p>
+<pre><code class="language-c">struct mydev {
+    void __iomem      *base;
+    struct i2c_client *client;
+    spinlock_t     lock;          /* protects rx_head, rx_tail, rx_buf */
+    unsigned int   rx_head, rx_tail;
+    u8             rx_buf[256];
+    struct mutex   cfg_lock;      /* protects configuration, may sleep */
+};
+
+/* Hard IRQ handler: interrupts are already disabled on this CPU here */
+static irqreturn_t mydev_irq(int irq, void *data)
+{
+    struct mydev *d = data;
+
+    spin_lock(&amp;d-&gt;lock);
+    d-&gt;rx_buf[d-&gt;rx_head++ % 256] = readb(d-&gt;base + RXDATA);
+    spin_unlock(&amp;d-&gt;lock);
+    return IRQ_HANDLED;
+}
+
+/* Process context reading the same ring */
+static int mydev_take(struct mydev *d, u8 *out)
+{
+    unsigned long flags;
+    int ret = -EAGAIN;
+
+    spin_lock_irqsave(&amp;d-&gt;lock, flags);
+    if (d-&gt;rx_tail != d-&gt;rx_head) {
+        *out = d-&gt;rx_buf[d-&gt;rx_tail++ % 256];
+        ret = 0;
+    }
+    spin_unlock_irqrestore(&amp;d-&gt;lock, flags);
+    return ret;     /* copy_to_user() happens AFTER unlocking */
+}
+
+/* Configuration over I2C may sleep: mutex */
+static int mydev_set_gain(struct mydev *d, u8 gain)
+{
+    int ret;
+
+    mutex_lock(&amp;d-&gt;cfg_lock);
+    ret = i2c_smbus_write_byte_data(d-&gt;client, REG_GAIN, gain);
+    mutex_unlock(&amp;d-&gt;cfg_lock);
+    return ret;
+}</code></pre>
+<p>The comment on each lock saying what it protects is not decoration. Kernel reviewers expect it, and it is what lets the next person extend the driver without guessing.</p>
+
+<h2 id="comparison">Comparison</h2>
+<table>
+<thead><tr><th></th><th>spinlock_t</th><th>struct mutex</th></tr></thead>
+<tbody>
+<tr><td>Waiting</td><td>Busy-waits</td><td>Sleeps</td></tr>
+<tr><td>Usable in IRQ / softirq</td><td>Yes</td><td>No</td></tr>
+<tr><td>May sleep while held</td><td>No</td><td>Yes</td></tr>
+<tr><td>Hold time</td><td>Microseconds at most</td><td>Can be long</td></tr>
+<tr><td>Owner tracking</td><td>No</td><td>Yes: only the owner may unlock</td></tr>
+<tr><td>Recursive</td><td>No</td><td>No (deadlocks; lockdep reports it)</td></tr>
+</tbody>
+</table>
+
+<h2 id="other-tools-you-will-meet">Other tools you will meet</h2>
+<ul>
+<li><strong>Atomics</strong> (<code>atomic_t</code>, <code>refcount_t</code>) for single counters and reference counts, without a lock.</li>
+<li><strong>RCU</strong> for read-mostly data: readers take no lock at all, writers publish a new copy and free the old one after a grace period.</li>
+<li><strong>Completions</strong> for "wait until this one event happens", such as a DMA transfer finishing. Not a lock, but often what people actually needed instead of a semaphore.</li>
+<li><strong>Read-write locks</strong> exist, but they rarely beat a plain spinlock and RCU usually serves read-heavy data better.</li>
+</ul>
+
+<h2 id="preempt-rt-changes-the-implementation-not-the-rules">PREEMPT_RT changes the implementation, not the rules</h2>
+<p>On real-time kernels (<code>CONFIG_PREEMPT_RT</code>, merged into mainline in Linux 6.12), <code>spinlock_t</code> becomes a sleeping lock based on an rt_mutex with priority inheritance, and most interrupt handlers run in kernel threads. This keeps latency low. Code that follows the rules above works on both. Code that truly must spin, such as low-level interrupt-controller code, uses <code>raw_spinlock_t</code>, which stays a real spinlock on every configuration.</p>
+
+<h2 id="let-the-tools-check-you">Let the tools check you</h2>
+<p>Lockdep (<code>CONFIG_PROVE_LOCKING</code>) records every lock ordering and context it observes and reports potential deadlocks, even ones that did not actually happen on this run, such as a lock taken with interrupts enabled in one place and from an IRQ handler in another. Run your driver's tests on a lockdep kernel before every release.</p>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>List every context that touches the data. If any is a hard IRQ, use <code>spin_lock_irqsave()</code>; if a softirq, <code>spin_lock_bh()</code>; if all are process context and anything may sleep, use a mutex. Keep spinlock sections tiny and do user copies and allocations outside them.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="linux-driver-probe.html"><small>Previous in Linux device drivers</small><span>What Happens When a Linux Driver Probes?</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

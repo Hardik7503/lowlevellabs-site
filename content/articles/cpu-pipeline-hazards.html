@@ -1,0 +1,124 @@
+<!--meta
+title: Inside a CPU Pipeline: Hazards, Forwarding and Branch Prediction
+description: How a classic five-stage pipeline overlaps instructions, what data, control and structural hazards are, and how forwarding, stalls and branch prediction keep it busy.
+topic: cpu
+date: 2026-11-20
+read: 10 min read
+order: 10
+lede: A pipelined CPU works on several instructions at once, like an assembly line. Almost everything interesting about CPU performance comes from the moments when that line has to stop.
+-->
+<h2>Why pipeline at all</h2>
+<p>Executing one instruction involves several steps: fetch it, decode it, compute, access memory, write the result. A non-pipelined CPU does all of them for one instruction before starting the next, so most of its hardware sits idle most of the time.</p>
+<p>A pipeline splits the work into stages separated by registers. Each clock cycle every stage works on a different instruction. Latency per instruction does not improve, but <strong>throughput</strong> approaches one instruction per cycle.</p>
+
+<h2>The classic five stages</h2>
+<table>
+<thead><tr><th>Stage</th><th>Name</th><th>Work done</th></tr></thead>
+<tbody>
+<tr><td>IF</td><td>Instruction fetch</td><td>Read the instruction at PC from the instruction cache; predict the next PC.</td></tr>
+<tr><td>ID</td><td>Decode</td><td>Decode the opcode and read source registers from the register file.</td></tr>
+<tr><td>EX</td><td>Execute</td><td>ALU operation, address calculation or branch comparison.</td></tr>
+<tr><td>MEM</td><td>Memory</td><td>Load or store through the data cache.</td></tr>
+<tr><td>WB</td><td>Write back</td><td>Write the result into the register file.</td></tr>
+</tbody>
+</table>
+<p>This is the textbook MIPS-style pipeline. Real cores such as a Cortex-A78 or a modern x86 have many more stages and execute out of order, but they face the same hazards and use the same ideas to hide them.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 210" role="img" aria-label="Pipeline diagram: four instructions overlapping across five stages over eight clock cycles">
+<g font-family="var(--mono)">
+<text class="m s" x="129" y="22">1</text><text class="m s" x="199" y="22">2</text><text class="m s" x="269" y="22">3</text><text class="m s" x="339" y="22">4</text><text class="m s" x="409" y="22">5</text><text class="m s" x="479" y="22">6</text><text class="m s" x="549" y="22">7</text><text class="m s" x="619" y="22">8</text>
+</g>
+<text class="s" x="20" y="22">cycle</text>
+<text class="m s" x="20" y="54">i1</text><text class="m s" x="20" y="94">i2</text><text class="m s" x="20" y="134">i3</text><text class="m s" x="20" y="174">i4</text>
+<g>
+<rect class="cu" x="100" y="38" width="66" height="26" rx="3"/><text class="m s" x="122" y="56">IF</text>
+<rect class="sg" x="170" y="38" width="66" height="26" rx="3"/><text class="m s" x="192" y="56">ID</text>
+<rect class="b" x="240" y="38" width="66" height="26" rx="3"/><text class="m s" x="262" y="56">EX</text>
+<rect class="b" x="310" y="38" width="66" height="26" rx="3"/><text class="m s" x="326" y="56">MEM</text>
+<rect class="b" x="380" y="38" width="66" height="26" rx="3"/><text class="m s" x="402" y="56">WB</text>
+</g>
+<g transform="translate(70,40)">
+<rect class="cu" x="100" y="38" width="66" height="26" rx="3"/><text class="m s" x="122" y="56">IF</text>
+<rect class="sg" x="170" y="38" width="66" height="26" rx="3"/><text class="m s" x="192" y="56">ID</text>
+<rect class="b" x="240" y="38" width="66" height="26" rx="3"/><text class="m s" x="262" y="56">EX</text>
+<rect class="b" x="310" y="38" width="66" height="26" rx="3"/><text class="m s" x="326" y="56">MEM</text>
+<rect class="b" x="380" y="38" width="66" height="26" rx="3"/><text class="m s" x="402" y="56">WB</text>
+</g>
+<g transform="translate(140,80)">
+<rect class="cu" x="100" y="38" width="66" height="26" rx="3"/><text class="m s" x="122" y="56">IF</text>
+<rect class="sg" x="170" y="38" width="66" height="26" rx="3"/><text class="m s" x="192" y="56">ID</text>
+<rect class="b" x="240" y="38" width="66" height="26" rx="3"/><text class="m s" x="262" y="56">EX</text>
+<rect class="b" x="310" y="38" width="66" height="26" rx="3"/><text class="m s" x="326" y="56">MEM</text>
+<rect class="b" x="380" y="38" width="66" height="26" rx="3"/><text class="m s" x="402" y="56">WB</text>
+</g>
+<g transform="translate(210,120)">
+<rect class="cu" x="100" y="38" width="66" height="26" rx="3"/><text class="m s" x="122" y="56">IF</text>
+<rect class="sg" x="170" y="38" width="66" height="26" rx="3"/><text class="m s" x="192" y="56">ID</text>
+<rect class="b" x="240" y="38" width="66" height="26" rx="3"/><text class="m s" x="262" y="56">EX</text>
+<rect class="b" x="310" y="38" width="66" height="26" rx="3"/><text class="m s" x="326" y="56">MEM</text>
+<rect class="b" x="380" y="38" width="66" height="26" rx="3"/><text class="m s" x="402" y="56">WB</text>
+</g>
+<path class="ln dash" d="M376 30v170"/><text class="s" x="384" y="204">from cycle 5 on, one instruction completes per cycle</text>
+</svg><figcaption>Once the pipeline is full, one instruction completes every cycle even though each takes five cycles from fetch to write-back.</figcaption></figure>
+
+<h2>Hazards: when the line must stop</h2>
+<p>A <strong>hazard</strong> is anything that prevents the next instruction from entering the next stage on the next cycle. There are three kinds.</p>
+
+<h3>Data hazards</h3>
+<p>The common case is read-after-write (RAW): an instruction needs a result that an earlier instruction has not written back yet.</p>
+```armasm
+add  x1, x2, x3     // x1 produced at the end of EX (cycle 3)
+sub  x4, x1, x5     // needs x1 at the start of its EX (cycle 4)
+```
+<p>Without help, <code>sub</code> would read the old <code>x1</code> in ID, or wait until <code>add</code> reaches WB, costing several cycles. <strong>Forwarding</strong> (bypassing) fixes this: extra paths carry the ALU result from the EX/MEM pipeline register straight back to the ALU input, so <code>sub</code> uses the new value with no delay.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 170" role="img" aria-label="Forwarding path carrying add's EX result directly to sub's EX input, and a load-use case requiring a one-cycle bubble">
+<text class="m s" x="20" y="44">add x1,…</text><text class="m s" x="20" y="84">sub …,x1</text>
+<g transform="translate(-10,0)">
+<rect class="cu" x="120" y="28" width="60" height="24" rx="3"/><text class="m s" x="140" y="45">IF</text>
+<rect class="sg" x="184" y="28" width="60" height="24" rx="3"/><text class="m s" x="204" y="45">ID</text>
+<rect class="ink" x="248" y="28" width="60" height="24" rx="3"/><text class="m s" x="268" y="45">EX</text>
+<rect class="b" x="312" y="28" width="60" height="24" rx="3"/><text class="m s" x="324" y="45">MEM</text>
+<rect class="cu" x="184" y="68" width="60" height="24" rx="3"/><text class="m s" x="204" y="85">IF</text>
+<rect class="sg" x="248" y="68" width="60" height="24" rx="3"/><text class="m s" x="268" y="85">ID</text>
+<rect class="ink" x="312" y="68" width="60" height="24" rx="3"/><text class="m s" x="332" y="85">EX</text>
+<path class="lc" d="M308 46c20 0 20 30 8 26"/><text class="s tc h" x="390" y="60">forward: no stall</text>
+</g>
+<text class="m s" x="20" y="134">ldr x1,[..] → add …,x1</text>
+<text class="s" x="200" y="134">loaded value exists only after MEM, so one bubble is unavoidable:</text>
+<g transform="translate(200,140)"><rect class="sg" x="0" y="0" width="56" height="20" rx="3"/><text class="m s" x="18" y="14">ID</text><rect class="wn" x="60" y="0" width="56" height="20" rx="3"/><text class="m s" x="68" y="14">stall</text><rect class="ink" x="120" y="0" width="56" height="20" rx="3"/><text class="m s" x="138" y="14">EX</text></g>
+</svg><figcaption>Forwarding removes most ALU-to-ALU stalls. A load followed immediately by a use of its result still costs a bubble, because the data does not exist until the end of MEM.</figcaption></figure>
+
+<p>The <strong>load-use hazard</strong> cannot be fully forwarded away, so the pipeline inserts a bubble. Compilers schedule independent instructions into that slot. This is one reason <code>-O2</code> code interleaves loads with unrelated arithmetic.</p>
+
+<h3>Control hazards</h3>
+<p>A branch's outcome is not known until EX, but the fetch stage has to fetch <em>something</em> on the next cycle. Waiting would cost a bubble on every branch, and roughly one instruction in five or six is a branch.</p>
+<p>So the CPU <strong>predicts</strong>. It fetches down the predicted path speculatively. If the prediction was right, nothing was lost. If it was wrong, the speculatively fetched instructions are flushed and fetch restarts at the correct address. On a deep modern pipeline that misprediction costs roughly 10 to 20 cycles.</p>
+<ul>
+<li>A <strong>branch target buffer</strong> remembers where taken branches went, so fetch can redirect before the branch is even decoded.</li>
+<li><strong>Direction predictors</strong> use history: two-bit saturating counters in simple cores, and global-history and TAGE-style predictors in high-end ones, which correctly predict over 95% of branches on typical code.</li>
+<li>A <strong>return stack buffer</strong> predicts <code>ret</code> targets by mirroring calls.</li>
+</ul>
+```c
+/* Data-dependent branch: unpredictable on random input, fast on sorted input */
+for (int i = 0; i < n; i++)
+    if (v[i] >= 128) sum += v[i];
+
+/* Branchless version: compilers often emit csel / cmov for this */
+for (int i = 0; i < n; i++)
+    sum += (v[i] >= 128) ? v[i] : 0;
+```
+
+<h3>Structural hazards</h3>
+<p>Two instructions need the same hardware in the same cycle, for example a single memory port shared by instruction fetch and a data load. Separate instruction and data caches (the "modified Harvard" design almost every core uses) exist largely to remove this one.</p>
+
+<h2>Why firmware engineers should care</h2>
+<ul>
+<li><strong>Cycle counts in reference manuals are best cases.</strong> A Cortex-M4's single-cycle <code>add</code> is single-cycle when its operands are ready and the branch before it was predicted.</li>
+<li><strong>Flash wait states are pipeline stalls.</strong> On microcontrollers, running from flash at high clock speed stalls fetch unless the prefetch buffer or cache hides it, which is why timing-critical ISRs are often placed in RAM.</li>
+<li><strong>Self-modifying code needs barriers.</strong> Instructions already fetched into the pipeline do not see your writes. After writing code to memory, Arm requires cache maintenance followed by <code>dsb</code> and <code>isb</code>; the <code>isb</code> flushes the pipeline so fetch starts again.</li>
+<li><strong>Speculation leaks.</strong> Spectre-class attacks exploit the fact that mispredicted, squashed instructions still leave traces in the caches.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>A pipeline overlaps instructions to approach one per cycle. Data hazards are handled with forwarding and the occasional stall, control hazards with branch prediction and flushes, structural hazards with duplicated hardware. Performance work at the instruction level is mostly about avoiding the stalls.</p></div>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RTOS &amp; VxWorks | LowLevel Labs</title>
+<meta name="description" content="Scheduling, synchronization, priority inversion and VxWorks architecture.">
+<link rel="canonical" href="https://lowlevellabs.in/topics/rtos.html">
+<meta property="og:title" content="RTOS &amp; VxWorks"><meta property="og:description" content="Scheduling, synchronization, priority inversion and VxWorks architecture.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/topics/rtos.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html">Articles</a><a href="../topics/index.html" aria-current="page">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<section class="page-head"><div class="wrap">
+<div class="crumbs"><a href="index.html">Topics</a> / <span class="mono">RTOS</span></div>
+<h1>RTOS & VxWorks</h1><p class="lede">Scheduling, synchronization, priority inversion and VxWorks architecture.</p></div></section>
+<section><div class="wrap"><ul class="toc-list"><li data-topic="rtos" data-text="semaphore, mutex or queue? choosing rtos primitives when to use a binary semaphore, a counting semaphore, a mutex, a message queue or a task notification, with freertos examples and the isr rules that go with them. rtos &amp; vxworks"><a class="toc-row" href="../articles/rtos-semaphore-mutex-queue.html"><span class="k">RTOS & VxWorks</span><span><span class="t">Semaphore, Mutex or Queue? Choosing RTOS Primitives</span><span class="new">New</span><span class="d">When to use a binary semaphore, a counting semaphore, a mutex, a message queue or a task notification, with FreeRTOS examples and the ISR rules that go with them.</span></span><span class="r">9 min read</span></a></li><li data-topic="rtos" data-text="priority inversion and how rtoses prevent it how a low-priority task can block a high-priority one indefinitely, what happened on mars pathfinder, and how priority inheritance and priority ceiling fix it. rtos &amp; vxworks"><a class="toc-row" href="../articles/rtos-priority-inversion.html"><span class="k">RTOS & VxWorks</span><span><span class="t">Priority Inversion and How RTOSes Prevent It</span><span class="new">New</span><span class="d">How a low-priority task can block a high-priority one indefinitely, what happened on Mars Pathfinder, and how priority inheritance and priority ceiling fix it.</span></span><span class="r">10 min read</span></a></li><li data-topic="rtos" data-text="vxworks architecture: tasks, rtps, bsps and vxbus a practical map of vxworks for embedded engineers: the wind kernel and scheduler, kernel tasks versus rtps, semaphores and message queues, isrs, bsps and vxbus. rtos &amp; vxworks"><a class="toc-row" href="../articles/vxworks-architecture-tasks.html"><span class="k">RTOS & VxWorks</span><span><span class="t">VxWorks Architecture: Tasks, RTPs, BSPs and VxBus</span><span class="new">New</span><span class="d">A practical map of VxWorks for embedded engineers: the wind kernel and scheduler, kernel tasks versus RTPs, semaphores and message queues, ISRs, BSPs and VxBus.</span></span><span class="r">12 min read</span></a></li></ul></div></section>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>
