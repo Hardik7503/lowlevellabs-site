@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Platform, I²C, and SPI Drivers: What Is Different? | LowLevel Labs</title>
-<meta name="description" content="Understand how Linux bus models influence driver registration and device matching.">
+<meta name="description" content="How Linux models memory-mapped, I²C and SPI devices: controller drivers vs device drivers, how each bus matches and probes, how you access registers, and why I²C and SPI drivers may sleep.">
 <link rel="canonical" href="https://lowlevellabs.in/articles/linux-platform-i2c-spi-drivers.html">
-<meta property="og:title" content="Platform, I²C, and SPI Drivers: What Is Different?"><meta property="og:description" content="Understand how Linux bus models influence driver registration and device matching.">
+<meta property="og:title" content="Platform, I²C, and SPI Drivers: What Is Different?"><meta property="og:description" content="How Linux models memory-mapped, I²C and SPI devices: controller drivers vs device drivers, how each bus matches and probes, how you access registers, and why I²C and SPI drivers may sleep.">
 <meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/linux-platform-i2c-spi-drivers.html">
 <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../styles.css?v=20261120">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Platform, I\u00b2C, and SPI Drivers: What Is Different?", "description": "Understand how Linux bus models influence driver registration and device matching.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Platform, I\u00b2C, and SPI Drivers: What Is Different?", "description": "How Linux models memory-mapped, I\u00b2C and SPI devices: controller drivers vs device drivers, how each bus matches and probes, how you access registers, and why I\u00b2C and SPI drivers may sleep.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -26,13 +26,115 @@
 <header class="article-head"><div class="wrap">
 <div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/drivers.html">Linux device drivers</a></div>
 <h1>Platform, I²C, and SPI Drivers: What Is Different?</h1>
-<p class="lede">Linux drivers share many patterns, but the bus model determines how devices are discovered, matched, and accessed. Platform, I²C, and SPI drivers are a useful starting comparison for embedded developers.</p>
-<div class="byline"><span>3 min read</span><span>22 Oct 2026</span></div>
+<p class="lede">An on-chip UART, an I²C temperature sensor and an SPI flash chip all need Linux drivers, but they are reached in completely different ways. Linux models each as a bus, and knowing which bus you're on tells you most of how to write the driver.</p>
+<div class="byline"><span>10 min read</span><span>22 Oct 2026</span> <span>Updated 20 Nov 2026</span></div>
 </div></header>
-<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#platform-devices">Platform devices</a></li><li><a href="#i-c-devices">I²C devices</a></li><li><a href="#spi-devices">SPI devices</a></li><li><a href="#conceptual-comparison">Conceptual comparison</a></li><li><a href="#common-mistake">Common mistake</a></li><li><a href="#bring-up-sequence">Bring-up sequence</a></li><li><a href="#final-takeaway">Final takeaway</a></li></ol></aside>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#the-key-question-how-does-the-cpu-reach-the-registers">The key question: how does the CPU reach the registers?</a></li><li><a href="#two-layers-of-drivers">Two layers of drivers</a></li><li><a href="#side-by-side">Side by side</a></li><li><a href="#the-same-register-read-three-ways">The same register read, three ways</a></li><li><a href="#regmap-one-api-for-all-three">regmap: one API for all three</a></li><li><a href="#the-consequence-that-bites-people-sleeping">The consequence that bites people: sleeping</a></li><li><a href="#device-tree-for-each-bus">Device Tree for each bus</a></li><li><a href="#debugging-tips-per-bus">Debugging tips per bus</a></li></ol></aside>
 <article class="prose">
-<h2 id="platform-devices">Platform devices</h2><p>Platform devices commonly represent SoC-integrated peripherals such as GPIO controllers, timers, or memory-mapped blocks. Their resources are often described by Device Tree: register ranges, interrupts, clocks, and resets. Drivers use the platform driver model and typically access registers through managed mapping helpers.</p><h2 id="i-c-devices">I²C devices</h2><p>I²C devices live behind an I²C controller and are addressed on the bus. A driver uses the I²C client model and SMBus or I²C transfer helpers. The <code>reg</code> property usually represents the device's bus address, not a memory-mapped register base. Register reads often involve a write of a register index followed by a repeated-start read, depending on the device protocol.</p><h2 id="spi-devices">SPI devices</h2><p>SPI devices are selected through chip-select and communicate through full-duplex transfers. A driver uses the SPI framework and message/transfer APIs. Clock mode, maximum frequency, word size, and chip-select timing must match the peripheral datasheet.</p><h2 id="conceptual-comparison">Conceptual comparison</h2><table><thead><tr><th>Model</th><th>Typical access</th><th>Device identity</th></tr></thead><tbody><tr><td>Platform</td><td>Memory-mapped registers</td><td>Firmware node or platform ID</td></tr><tr><td>I²C</td><td>Bus transactions by address</td><td>I²C client and compatible/ID</td></tr><tr><td>SPI</td><td>Clocked transfers with chip-select</td><td>SPI device and compatible/ID</td></tr></tbody></table><h2 id="common-mistake">Common mistake</h2><p>Do not choose a driver model based only on the sensor's electrical pins. A sensor connected over I²C should normally use the I²C framework, even if it also has an interrupt GPIO. The GPIO signals an event; it does not change the data bus.</p><h2 id="bring-up-sequence">Bring-up sequence</h2><ul><li>Verify wiring, power, pin mux, and controller enablement.</li><li>Describe the device correctly in firmware or board data.</li><li>Use the right subsystem APIs and matching table.</li><li>Check bus-level traces and kernel logs before blaming the sensor.</li></ul><h2 id="final-takeaway">Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
-<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="interrupt-context-vs-process-context.html"><small>Previous in Linux device drivers</small><span>Linux Kernel Contexts: Process, Softirq, and Hard IRQ</span></a><a class="pn next" href="linux-driver-probe.html"><small>Next in Linux device drivers</small><span>What Happens When a Linux Driver Probes?</span></a></nav>
+<h2 id="the-key-question-how-does-the-cpu-reach-the-registers">The key question: how does the CPU reach the registers?</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 290" role="img" aria-label="CPU reaches platform device registers directly by load and store; reaches I2C and SPI device registers through a controller that sends bus transactions">
+<rect class="ink" x="250" y="10" width="180" height="50" rx="6"/><text class="h" x="318" y="40">CPU</text>
+<path class="ln" d="M340 60v30M90 90h500M90 90v20M340 90v20M590 90v20"/><text class="s" x="440" y="84">SoC internal bus (memory-mapped)</text>
+<rect class="cu" x="20" y="110" width="140" height="56" rx="6"/><text class="h" x="36" y="134">UART</text><text class="s" x="36" y="154">platform device</text>
+<rect class="sg" x="270" y="110" width="140" height="56" rx="6"/><text class="h" x="286" y="134">I²C controller</text><text class="s" x="286" y="154">platform device</text>
+<rect class="sg" x="520" y="110" width="140" height="56" rx="6"/><text class="h" x="536" y="134">SPI controller</text><text class="s" x="536" y="154">platform device</text>
+<path class="ln" d="M340 166v30M260 196h160M260 196v20M420 196v20"/><text class="s" x="350" y="186">SDA/SCL</text>
+<rect class="b" x="200" y="216" width="120" height="50" rx="6"/><text class="s" x="212" y="238">temp sensor</text><text class="m s" x="212" y="256">addr 0x48</text>
+<rect class="b" x="360" y="216" width="120" height="50" rx="6"/><text class="s" x="372" y="238">EEPROM</text><text class="m s" x="372" y="256">addr 0x50</text>
+<path class="ln" d="M590 166v50"/><text class="s" x="500" y="196">MOSI/MISO/SCK/CS</text>
+<rect class="b" x="530" y="216" width="120" height="50" rx="6"/><text class="s" x="542" y="238">SPI NOR flash</text><text class="m s" x="542" y="256">chip select 0</text>
+<text class="s" x="20" y="200">readl()/writel():</text><text class="s" x="20" y="216">one CPU instruction</text>
+</svg><figcaption>Platform devices are reached with plain loads and stores. Devices on I²C or SPI are reached by asking their controller to run a serial transaction.</figcaption></figure>
+<ul>
+<li><strong>Platform devices</strong> are memory-mapped peripherals inside the SoC. Their registers appear in the CPU's address space, so a register read is one instruction taking nanoseconds.</li>
+<li><strong>I²C and SPI devices</strong> are separate chips on a serial bus. The CPU cannot address their registers. It asks the bus <em>controller</em> to send a transaction, which takes microseconds to milliseconds and finishes with an interrupt.</li>
+</ul>
+
+<h2 id="two-layers-of-drivers">Two layers of drivers</h2>
+<p>For I²C and SPI, Linux splits the work in two:</p>
+<ul>
+<li>The <strong>controller driver</strong> (also called adapter or master driver) operates the SoC's I²C or SPI hardware. It is itself a platform driver, and it registers a bus: <code>i2c-1</code>, <code>spi0</code>.</li>
+<li>The <strong>device driver</strong> (also called client or protocol driver) knows the sensor, EEPROM or flash chip. It never touches the controller's registers; it just says "write these bytes to address 0x48".</li>
+</ul>
+<p>Because of the split, a temperature sensor driver works on any SoC whose I²C controller has a driver. That reuse is the point of the model.</p>
+
+<h2 id="side-by-side">Side by side</h2>
+<table>
+<thead><tr><th></th><th>Platform</th><th>I²C</th><th>SPI</th></tr></thead>
+<tbody>
+<tr><td>Driver struct</td><td><code>platform_driver</code></td><td><code>i2c_driver</code></td><td><code>spi_driver</code></td></tr>
+<tr><td>Probe argument</td><td><code>struct platform_device *</code></td><td><code>struct i2c_client *</code></td><td><code>struct spi_device *</code></td></tr>
+<tr><td>Device found from</td><td>DT node under the SoC bus</td><td>DT child of an I²C controller node</td><td>DT child of an SPI controller node</td></tr>
+<tr><td>Address meaning of <code>reg</code></td><td>Physical register window</td><td>7-bit (or 10-bit) device address</td><td>Chip-select number</td></tr>
+<tr><td>Register access</td><td><code>readl()</code>/<code>writel()</code> on an <code>ioremap</code>ed base</td><td><code>i2c_smbus_*()</code>, <code>i2c_transfer()</code>, regmap</td><td><code>spi_sync()</code>, <code>spi_write_then_read()</code>, regmap</td></tr>
+<tr><td>Access speed</td><td>Nanoseconds</td><td>Tens to hundreds of microseconds (100 kHz to 1 MHz)</td><td>Microseconds (MHz clock, full duplex)</td></tr>
+<tr><td>Can register access sleep?</td><td>No</td><td><strong>Yes</strong></td><td><strong>Yes</strong> (<code>spi_sync</code>)</td></tr>
+</tbody>
+</table>
+
+<h2 id="the-same-register-read-three-ways">The same register read, three ways</h2>
+<pre><code class="language-c">/* Platform: memory-mapped, one instruction */
+u32 status = readl(priv-&gt;base + STATUS_REG);
+
+/* I2C: SMBus "read byte data" = START, addr+W, reg, RESTART, addr+R, data, STOP */
+s32 val = i2c_smbus_read_byte_data(client, STATUS_REG);
+if (val &lt; 0)
+    return val;               /* NACK, timeout, bus error ... */
+
+/* SPI: command byte out, one byte back, with chip select held */
+u8 cmd = STATUS_REG | 0x80;   /* many SPI chips use bit 7 to mean "read" */
+u8 val8;
+int ret = spi_write_then_read(spi, &amp;cmd, 1, &amp;val8, 1);</code></pre>
+<p>Notice the error handling. A memory-mapped read cannot fail in a way software sees. An I²C or SPI transfer can: the device may not answer, the bus may be stuck, or a timeout may expire. Every serial-bus access needs its return value checked.</p>
+
+<h2 id="regmap-one-api-for-all-three">regmap: one API for all three</h2>
+<p>Many drivers use <strong>regmap</strong>, which hides the bus behind <code>regmap_read()</code>, <code>regmap_write()</code> and <code>regmap_update_bits()</code>, and adds register caching, locking and debugfs dumps. Chips that offer both I²C and SPI interfaces often share one core driver with two thin bus front ends.</p>
+<pre><code class="language-c">static const struct regmap_config cfg = { .reg_bits = 8, .val_bits = 8, .max_register = 0x7f };
+
+/* in an I2C probe */   map = devm_regmap_init_i2c(client, &amp;cfg);
+/* in an SPI probe */   map = devm_regmap_init_spi(spi, &amp;cfg);
+
+regmap_update_bits(map, CTRL_REG, CTRL_ENABLE, CTRL_ENABLE);   /* same code either way */</code></pre>
+<h2 id="the-consequence-that-bites-people-sleeping">The consequence that bites people: sleeping</h2>
+<p>An I²C or SPI transfer waits for the controller's completion interrupt, so it <strong>sleeps</strong>. That means you cannot read an I²C sensor from a hard interrupt handler or while holding a spinlock.</p>
+<p>Typical case: an I²C GPIO expander or touch controller asserts an interrupt line, and the handler must read a status register over I²C to find out why. The solution is a <strong>threaded interrupt</strong>: the hard handler does nothing, and the real handler runs in a kernel thread where sleeping is allowed.</p>
+<pre><code class="language-c">ret = devm_request_threaded_irq(dev, client-&gt;irq,
+                                NULL,                    /* no hard-IRQ handler */
+                                touch_irq_thread,        /* runs in a thread, may sleep */
+                                IRQF_ONESHOT,            /* keep line masked until thread finishes */
+                                "touch", priv);</code></pre>
+<p>See <a href="interrupt-context-vs-process-context.html">Linux Kernel Contexts</a> for the full rules.</p>
+
+<h2 id="device-tree-for-each-bus">Device Tree for each bus</h2>
+<pre><code class="language-dts">&amp;i2c1 {
+    status = "okay";
+    clock-frequency = &lt;400000&gt;;            /* 400 kHz fast mode */
+    sensor@48 {
+        compatible = "ti,tmp102";
+        reg = &lt;0x48&gt;;                      /* I2C address */
+        interrupt-parent = &lt;&amp;gpio1&gt;;
+        interrupts = &lt;5 IRQ_TYPE_LEVEL_LOW&gt;;
+    };
+};
+
+&amp;spi0 {
+    status = "okay";
+    flash@0 {
+        compatible = "jedec,spi-nor";
+        reg = &lt;0&gt;;                         /* chip select 0 */
+        spi-max-frequency = &lt;50000000&gt;;
+    };
+};</code></pre>
+<h2 id="debugging-tips-per-bus">Debugging tips per bus</h2>
+<ul>
+<li><strong>Platform:</strong> wrong <code>reg</code> base or a disabled clock gives reads of all zeros or all ones, or an external abort. Check the clock and reset first.</li>
+<li><strong>I²C:</strong> <code>i2cdetect -y 1</code> scans for devices that acknowledge. No answer means wrong address, missing pull-ups, the device unpowered or held in reset. A bus stuck with SDA low needs a recovery sequence (nine clock pulses).</li>
+<li><strong>SPI:</strong> check mode (CPOL/CPHA) and maximum frequency against the datasheet. A logic analyzer on SCK, MOSI, MISO and CS settles most arguments in minutes.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Platform devices are memory-mapped and accessed directly. I²C and SPI devices sit behind a controller, so their drivers send bus transactions that can fail and can sleep. Controller and device drivers are separate, regmap can hide the difference, and sleeping access means threaded interrupts and no spinlocks around register I/O.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="linux-driver-probe.html"><small>Previous in Linux device drivers</small><span>What Happens When a Linux Driver Probes?</span></a><a class="pn next" href="linux-character-device-read-write.html"><small>Next in Linux device drivers</small><span>From open() to read(): A Linux Character Device Walkthrough</span></a></nav>
 </article></div>
 </main>
 <footer class="foot"><div class="wrap">

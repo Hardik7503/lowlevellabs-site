@@ -27,10 +27,38 @@
 <div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/cpu.html">CPU internals</a></div>
 <h1>Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64</h1>
 <p class="lede">The important shift is not simply 32-bit to 64-bit. Armv8-A introduces a new execution state, a different exception model, a larger register set, and architectural changes that affect boot code, kernels, and low-level debugging.</p>
-<div class="byline"><span>5 min read</span><span>22 Oct 2026</span></div>
+<div class="byline"><span>12 min read</span><span>22 Oct 2026</span> <span>Updated 20 Nov 2026</span></div>
 </div></header>
-<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#first-understand-the-names">First, understand the names</a></li><li><a href="#at-a-glance-comparison">At-a-glance comparison</a></li><li><a href="#registers-r0-r15-versus-x0-x30">Registers: R0–R15 versus X0–X30</a></li><li><a href="#instruction-set-differences">Instruction-set differences</a></li><li><a href="#exception-handling-processor-modes-vs-exception-levels">Exception handling: processor modes vs. exception levels</a></li><li><a href="#mmu-and-address-translation">MMU and address translation</a></li><li><a href="#boot-and-firmware-implications">Boot and firmware implications</a></li><li><a href="#what-changes-when-porting-low-level-code">What changes when porting low-level code?</a></li><li><a href="#practical-debugging-checklist">Practical debugging checklist</a></li><li><a href="#key-takeaway">Key takeaway</a></li></ol></aside>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#the-short-version">The short version</a></li><li><a href="#first-understand-the-names">First, understand the names</a></li><li><a href="#at-a-glance-comparison">At-a-glance comparison</a></li><li><a href="#registers-r0-r15-versus-x0-x30">Registers: R0–R15 versus X0–X30</a></li><li><a href="#instruction-set-differences">Instruction-set differences</a></li><li><a href="#exception-handling-processor-modes-vs-exception-levels">Exception handling: processor modes vs. exception levels</a></li><li><a href="#mmu-and-address-translation">MMU and address translation</a></li><li><a href="#boot-and-firmware-implications">Boot and firmware implications</a></li><li><a href="#what-changes-when-porting-low-level-code">What changes when porting low-level code?</a></li><li><a href="#practical-debugging-checklist">Practical debugging checklist</a></li><li><a href="#key-takeaway">Key takeaway</a></li></ol></aside>
 <article class="prose">
+<h2 id="the-short-version">The short version</h2>
+<p>Think of the architecture as a <strong>rulebook</strong> that chip designers implement: which instructions exist, which registers software can see, and how privilege and memory protection work. Cortex-A9 and Cortex-A53 are <em>chips</em> built to a rulebook; Armv7-A and Armv8-A are <em>rulebook versions</em>.</p>
+<ul>
+<li><strong>Armv7-A</strong> (2005 onwards, e.g. Cortex-A7, A9, A15) is a 32-bit architecture.</li>
+<li><strong>Armv8-A</strong> (2011 onwards, e.g. Cortex-A53, A72, A76) added a brand-new 64-bit mode called <strong>AArch64</strong>, and renamed the old 32-bit behaviour <strong>AArch32</strong>.</li>
+</ul>
+<p>So "Armv8 vs Armv7" is mostly "AArch64 vs AArch32": twice as many general-purpose registers, each twice as wide, a cleaner instruction set, and a much simpler privilege model built on four exception levels.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 230" role="img" aria-label="Register files compared: AArch32 has 16 32-bit registers R0 to R15 including SP, LR and PC; AArch64 has 31 64-bit registers X0 to X30, a separate SP, and PC not directly accessible">
+<text class="h" x="20" y="22">AArch32: 16 × 32-bit</text>
+<g transform="translate(20,34)">
+<rect class="b" x="0" y="0" width="260" height="104"/><text class="m s" x="12" y="24">R0 – R12</text><text class="s" x="12" y="44">general purpose</text>
+<rect class="cu" x="0" y="104" width="86" height="34"/><text class="m s" x="8" y="126">R13 SP</text>
+<rect class="cu" x="86" y="104" width="87" height="34"/><text class="m s" x="94" y="126">R14 LR</text>
+<rect class="wn" x="173" y="104" width="87" height="34"/><text class="m s" x="181" y="126">R15 PC</text>
+<text class="s" x="0" y="164">PC is an ordinary register: "mov pc, lr" returns.</text>
+<text class="s" x="0" y="182">Many registers are banked per processor mode.</text>
+</g>
+<text class="h" x="360" y="22">AArch64: 31 × 64-bit</text>
+<g transform="translate(360,34)">
+<rect class="sg" x="0" y="0" width="300" height="104"/><text class="m s" x="12" y="24">X0 – X28</text><text class="s" x="12" y="44">general purpose (W0–W28 = low 32 bits)</text>
+<rect class="cu" x="0" y="104" width="100" height="34"/><text class="m s" x="8" y="126">X29 FP</text>
+<rect class="cu" x="100" y="104" width="100" height="34"/><text class="m s" x="108" y="126">X30 LR</text>
+<rect class="b" x="200" y="104" width="100" height="34"/><text class="m s" x="208" y="126">SP, XZR</text>
+<text class="s" x="0" y="164">PC cannot be written directly; only branches change it.</text>
+<text class="s" x="0" y="182">Register 31 means SP or the zero register by context.</text>
+</g>
+</svg><figcaption>The visible register files. More registers means fewer stack spills and lets AAPCS64 pass eight arguments in registers instead of four.</figcaption></figure>
+
 <h2 id="first-understand-the-names">First, understand the names</h2>
     <p><strong>Armv7-A</strong> is an application-profile architecture generation commonly associated with 32-bit AArch32 execution. <strong>Armv8-A</strong> introduced AArch64, a 64-bit execution state, while also supporting AArch32 in many implementations. Support for AArch32 is optional in some later Armv8-A and newer implementations, so always check the specific CPU.</p>
     <p><strong>AArch32 and AArch64 are execution states</strong>, not processor models. A CPU implementing Armv8-A may run AArch64 software and, where implemented, AArch32 software. An operating system's supported state also depends on firmware, boot configuration, and the software image.</p>
@@ -63,7 +91,25 @@
     <p>AArch64 organizes privilege into exception levels: <strong>EL0</strong> is typically applications, <strong>EL1</strong> an operating-system kernel, <strong>EL2</strong> a hypervisor, and <strong>EL3</strong> secure monitor or firmware. Not every platform uses every level, and the security architecture and software configuration determine the actual transitions.</p>
     <p>On exception entry, the processor records return state in exception-related registers such as <code>ELR_ELx</code> and <code>SPSR_ELx</code>, then branches through a vector table selected for the target exception level and the origin context. A handler returns using an exception-return instruction such as <code>ERET</code>.</p>
 
-    <h2 id="mmu-and-address-translation">MMU and address translation</h2>
+    <figure class="fig"><svg class="dg" viewBox="0 0 680 250" role="img" aria-label="Privilege compared: Armv7 processor modes User, FIQ, IRQ, Supervisor, Abort, Undefined, System, plus Hyp and Monitor; Armv8 exception levels EL0 applications, EL1 OS kernel, EL2 hypervisor, EL3 secure monitor">
+<text class="h" x="20" y="22">Armv7-A: processor modes</text>
+<g transform="translate(20,36)">
+<rect class="b" x="0" y="150" width="290" height="34" rx="4"/><text class="s" x="10" y="172">USR (unprivileged applications)</text>
+<rect class="cu" x="0" y="104" width="290" height="40" rx="4"/><text class="s" x="10" y="122">SVC · IRQ · FIQ · ABT · UND · SYS</text><text class="s" x="10" y="138">privileged modes, each with banked SP/LR</text>
+<rect class="wn" x="0" y="56" width="290" height="40" rx="4"/><text class="s" x="10" y="80">HYP (with Virtualization Extensions)</text>
+<rect class="ink" x="0" y="8" width="290" height="40" rx="4"/><text class="s" x="10" y="32">MON (Secure Monitor, TrustZone)</text>
+</g>
+<text class="h" x="370" y="22">Armv8-A: exception levels</text>
+<g transform="translate(370,36)">
+<rect class="b" x="0" y="150" width="290" height="34" rx="4"/><text class="m s" x="10" y="172">EL0</text><text class="s" x="60" y="172">applications</text>
+<rect class="cu" x="0" y="104" width="290" height="40" rx="4"/><text class="m s" x="10" y="129">EL1</text><text class="s" x="60" y="129">OS kernel</text>
+<rect class="wn" x="0" y="56" width="290" height="40" rx="4"/><text class="m s" x="10" y="81">EL2</text><text class="s" x="60" y="81">hypervisor</text>
+<rect class="ink" x="0" y="8" width="290" height="40" rx="4"/><text class="m s" x="10" y="33">EL3</text><text class="s" x="60" y="33">secure monitor (e.g. TF-A BL31)</text>
+</g>
+<text class="s" x="370" y="242">Higher EL = more privilege.</text>
+</svg><figcaption>Armv7 has many modes chosen by exception type. Armv8 has four levels chosen by privilege; the exception <em>type</em> is reported in a syndrome register instead.</figcaption></figure>
+
+<h2 id="mmu-and-address-translation">MMU and address translation</h2>
     <p>Both architecture generations can use an MMU to translate virtual addresses to physical addresses and enforce access permissions. The formats and control registers differ between AArch32 and AArch64, so early boot code must configure translation tables and control registers according to the current execution state.</p>
     <p>In AArch64, <code>TTBR0_EL1</code> and <code>TTBR1_EL1</code> commonly point to translation tables for different virtual-address regions, while <code>TCR_EL1</code> configures translation properties and <code>MAIR_EL1</code> defines memory attributes. The exact arrangement depends on the operating system and platform. A larger register width does not mean every CPU supports the full 64-bit virtual address space.</p>
 
@@ -97,7 +143,7 @@
 
     <h2 id="key-takeaway">Key takeaway</h2>
     <p>Armv7-A is strongly associated with 32-bit AArch32 systems, while Armv8-A introduced AArch64 and a substantially revised execution and exception model. For firmware and kernel engineers, the most important differences are the execution state, register and ABI model, exception handling, system-register interface, and MMU setup—not just the size of an address or register.</p>
-<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="virtual-memory-mmu-tlb.html"><small>Previous in CPU internals</small><span>Virtual Memory: MMU Page Walks and the TLB</span></a><a class="pn next" href="dma-cache-coherency.html"><small>Next in CPU internals</small><span>DMA and Cache Coherency, Explained</span></a></nav>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="dma-cache-coherency.html"><small>Previous in CPU internals</small><span>DMA and Cache Coherency</span></a><a class="pn next" href="smp-interprocessor-interrupt-mailbox.html"><small>Next in CPU internals</small><span>SMP Communication: IPIs, Mailboxes and Shared Memory</span></a></nav>
 </article></div>
 </main>
 <footer class="foot"><div class="wrap">

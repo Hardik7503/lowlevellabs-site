@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Interrupts vs. Polling vs. DMA | LowLevel Labs</title>
-<meta name="description" content="Choose the right way to move data and react to hardware events.">
+<meta name="description" content="Three ways software deals with hardware, explained with a restaurant analogy, timelines and code: polling, interrupts and DMA, their costs, and how real drivers combine them.">
 <link rel="canonical" href="https://lowlevellabs.in/articles/interrupts-polling-dma.html">
-<meta property="og:title" content="Interrupts vs. Polling vs. DMA"><meta property="og:description" content="Choose the right way to move data and react to hardware events.">
+<meta property="og:title" content="Interrupts vs. Polling vs. DMA"><meta property="og:description" content="Three ways software deals with hardware, explained with a restaurant analogy, timelines and code: polling, interrupts and DMA, their costs, and how real drivers combine them.">
 <meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/interrupts-polling-dma.html">
 <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../styles.css?v=20261120">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Interrupts vs. Polling vs. DMA", "description": "Choose the right way to move data and react to hardware events.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Interrupts vs. Polling vs. DMA", "description": "Three ways software deals with hardware, explained with a restaurant analogy, timelines and code: polling, interrupts and DMA, their costs, and how real drivers combine them.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -26,15 +26,107 @@
 <header class="article-head"><div class="wrap">
 <div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/firmware.html">Embedded firmware</a></div>
 <h1>Interrupts vs. Polling vs. DMA</h1>
-<p class="lede">Polling, interrupts, and DMA solve different parts of the same problem: how software notices hardware events and moves data efficiently. They are not interchangeable features; good designs often combine them.</p>
-<div class="byline"><span>3 min read</span><span>22 Oct 2026</span></div>
+<p class="lede">A peripheral finishes something: a byte arrives, a conversion completes, a buffer is sent. Software has to notice and move the data. There are three basic ways to do that, and choosing well decides whether your CPU is busy, idle or asleep.</p>
+<div class="byline"><span>10 min read</span><span>22 Oct 2026</span> <span>Updated 20 Nov 2026</span></div>
 </div></header>
-<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#polling-ask-the-device-repeatedly">Polling: ask the device repeatedly</a></li><li><a href="#interrupts-let-the-device-signal-an-event">Interrupts: let the device signal an event</a></li><li><a href="#dma-move-data-without-copying-every-byte-in-the-cpu">DMA: move data without copying every byte in the CPU</a></li><li><a href="#they-work-together">They work together</a></li><li><a href="#decision-checklist">Decision checklist</a></li><li><a href="#final-takeaway">Final takeaway</a></li></ol></aside>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#an-analogy-first">An analogy first</a></li><li><a href="#polling">Polling</a></li><li><a href="#interrupts">Interrupts</a></li><li><a href="#dma">DMA</a></li><li><a href="#choosing">Choosing</a></li><li><a href="#real-drivers-combine-all-three">Real drivers combine all three</a></li></ol></aside>
 <article class="prose">
-<h2 id="polling-ask-the-device-repeatedly">Polling: ask the device repeatedly</h2><p>In polling, the CPU reads a status register or checks a condition in a loop. It is simple, predictable, and useful during early bring-up or when events are extremely frequent and cheap to check. The downside is wasted CPU time and the possibility of missing timing goals when the loop is delayed.</p><pre><code>while (!(REG_STATUS &amp; RX_READY)) {
-    /* wait, perhaps with a timeout */
-}</code></pre><p>Production code should normally include a timeout or another escape path instead of waiting forever.</p><h2 id="interrupts-let-the-device-signal-an-event">Interrupts: let the device signal an event</h2><p>An interrupt allows hardware to notify the CPU when attention is required. The interrupt handler should usually acknowledge or capture the minimum necessary state, then defer longer work to a threaded handler, tasklet/workqueue, or RTOS task as appropriate. Keep interrupt context short and avoid sleeping in a hard interrupt handler.</p><h2 id="dma-move-data-without-copying-every-byte-in-the-cpu">DMA: move data without copying every byte in the CPU</h2><p>DMA engines transfer blocks between a peripheral and memory. The CPU configures the transfer and handles completion, often through an interrupt. DMA reduces per-byte CPU work but adds buffer ownership, alignment, addressability, and cache-coherency requirements.</p><h2 id="they-work-together">They work together</h2><p>A common UART design uses interrupts for small or irregular traffic and DMA for larger buffers. A network interface may use DMA descriptor rings and interrupts, with polling in a budgeted receive loop. A boot-time driver may poll briefly before the scheduler or interrupt controller is ready.</p><h2 id="decision-checklist">Decision checklist</h2><ul><li>Use polling when simplicity or tightly bounded short waits matter.</li><li>Use interrupts when events are sporadic and the CPU should do other work.</li><li>Use DMA for substantial data movement when hardware and software overhead justify it.</li><li>Measure latency, throughput, CPU load, and worst-case behavior on the target board.</li></ul><h2 id="final-takeaway">Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
-<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="cortex-m-reset-to-main.html"><small>Previous in Embedded firmware</small><span>From Reset to main() on an ARM Cortex-M</span></a><a class="pn next" href="nor-vs-nand.html"><small>Next in Embedded firmware</small><span>NOR vs. NAND Flash: What’s the Difference?</span></a></nav>
+<h2 id="an-analogy-first">An analogy first</h2>
+<p>You are waiting for a pizza delivery.</p>
+<ul>
+<li><strong>Polling:</strong> you walk to the door every minute to check. Simple, but you get nothing else done, and if you check too rarely the pizza goes cold.</li>
+<li><strong>Interrupt:</strong> you get on with your work and the doorbell rings when it arrives. You stop, collect the pizza, and go back to work.</li>
+<li><strong>DMA:</strong> you hire someone to receive all twenty pizzas for a party and put them on the table. They ring you once, when the whole order is done.</li>
+</ul>
+<p>Hardware works the same way. The "door" is a status register, the "doorbell" is an interrupt line, and the "helper" is the DMA controller.</p>
+
+<h2 id="polling">Polling</h2>
+<p>The CPU repeatedly reads a status register until a flag says the device is ready, then does the transfer itself.</p>
+<pre><code class="language-c">/* Send a string over a UART by polling */
+void uart_puts(const char *s)
+{
+    while (*s) {
+        while (!(UART-&gt;SR &amp; SR_TXE)) { }   /* spin until the TX register is empty */
+        UART-&gt;DR = *s++;
+    }
+}</code></pre>
+<p><strong>Good:</strong> trivial to write, no concurrency, and the lowest possible latency when the CPU has nothing else to do, because the response starts on the very next loop iteration. <strong>Bad:</strong> the CPU is 100% busy while waiting. At 115200 baud a byte takes about 87 µs; a 72 MHz CPU wastes roughly 6000 cycles per character.</p>
+<p>Polling is the right choice in bootloaders, in early bring-up, in panic and crash handlers (where interrupts may be unusable), and for events that are known to complete within a few cycles.</p>
+
+<h2 id="interrupts">Interrupts</h2>
+<p>The device raises a signal when it needs attention. The CPU finishes its current instruction, saves its state, and jumps to an <strong>interrupt service routine (ISR)</strong>. When the ISR returns, the interrupted code continues as if nothing happened.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 220" role="img" aria-label="Timeline comparing polling, where the CPU is busy the whole time, with interrupts, where the CPU does other work and briefly runs an ISR per byte">
+<text class="h" x="20" y="34">Polling</text>
+<rect class="wn" x="130" y="20" width="520" height="22" rx="3"/><text class="s" x="140" y="35">check, check, check, check … (busy the whole time)</text>
+<path class="ln" d="M240 50v-8M360 50v-8M480 50v-8M600 50v-8"/><text class="s" x="232" y="64">byte</text><text class="s" x="352" y="64">byte</text><text class="s" x="472" y="64">byte</text><text class="s" x="592" y="64">byte</text>
+<text class="h" x="20" y="114">Interrupts</text>
+<rect class="sg" x="130" y="100" width="110" height="22" rx="3"/><rect class="cu" x="240" y="100" width="16" height="22"/>
+<rect class="sg" x="256" y="100" width="104" height="22" rx="3"/><rect class="cu" x="360" y="100" width="16" height="22"/>
+<rect class="sg" x="376" y="100" width="104" height="22" rx="3"/><rect class="cu" x="480" y="100" width="16" height="22"/>
+<rect class="sg" x="496" y="100" width="104" height="22" rx="3"/><rect class="cu" x="600" y="100" width="16" height="22"/>
+<rect class="sg" x="616" y="100" width="34" height="22" rx="3"/>
+<rect class="sg" x="130" y="160" width="20" height="14"/><text class="s" x="158" y="172">other useful work (or sleep)</text>
+<rect class="cu" x="360" y="160" width="20" height="14"/><text class="s" x="388" y="172">ISR: entry, read byte, return</text>
+<text class="s" x="130" y="204">Each interrupt has a fixed entry/exit cost: tens of cycles on an MCU, more on big CPUs.</text>
+</svg><figcaption>Polling burns the CPU between events. Interrupts let the CPU do other work, at the price of a small fixed cost per event.</figcaption></figure>
+<pre><code class="language-c">static volatile uint8_t  rx_buf[64];
+static volatile uint32_t rx_head;
+
+void USART1_IRQHandler(void)            /* name comes from the vector table */
+{
+    if (UART-&gt;SR &amp; SR_RXNE) {           /* which event? check the cause */
+        rx_buf[rx_head++ % 64] = (uint8_t)UART-&gt;DR;   /* reading DR clears RXNE */
+    }
+}</code></pre>
+<p><strong>Good:</strong> the CPU can run other code or sleep, and response time is short and predictable. <strong>Bad:</strong> every event has a fixed overhead (saving registers, entering and leaving the ISR), concurrency bugs appear because the ISR can run between any two instructions of the main code, and at high event rates the overhead dominates. A 10 Gb/s network card receiving small packets would interrupt millions of times a second and do nothing else; that problem has a name, <em>interrupt storm</em> or <em>livelock</em>.</p>
+<div class="pitfall"><strong>Rules for ISRs</strong>
+<p>Keep them short. Acknowledge or clear the interrupt source, or it will fire again immediately. Don't block, don't call <code>printf</code>, and hand longer work to a task or thread. Variables shared with the ISR need <code>volatile</code> and, if wider than one word, a critical section.</p></div>
+
+<h2 id="dma">DMA</h2>
+<p>A <strong>Direct Memory Access</strong> controller is a small engine that copies data between a peripheral and memory, or between two memory regions, without the CPU touching each byte. The CPU programs it once (source, destination, length, trigger), starts it, and gets one interrupt when the whole block is done.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 220" role="img" aria-label="DMA data path: CPU configures DMA controller, DMA moves data between UART and RAM over the bus, then signals one completion interrupt">
+<rect class="ink" x="20" y="20" width="140" height="60" rx="6"/><text class="h" x="64" y="56">CPU</text>
+<rect class="cu" x="270" y="20" width="160" height="60" rx="6"/><text class="h" x="282" y="46">DMA controller</text><text class="s" x="282" y="66">src, dst, length</text>
+<rect class="b" x="20" y="140" width="140" height="60" rx="6"/><text class="h" x="40" y="176">UART RX</text>
+<rect class="sg" x="520" y="140" width="140" height="60" rx="6"/><text class="h" x="562" y="168">RAM</text><text class="s" x="548" y="186">rx_buf[512]</text>
+<path class="ln" d="M160 44h110"/><text class="s" x="170" y="38">1. configure, start</text>
+<path class="lc" d="M160 170h360"/><text class="s tc h" x="230" y="162">2. 512 bytes moved by DMA, CPU not involved</text>
+<path class="ln dash" d="M350 80v80"/>
+<path class="ls" d="M270 66H160"/><text class="s ts" x="170" y="96">3. one "transfer complete" IRQ</text>
+</svg><figcaption>With DMA, the CPU's involvement drops from once per byte to once per block.</figcaption></figure>
+<pre><code class="language-c">void uart_rx_start(void)
+{
+    DMA1_CH5-&gt;CPAR  = (uint32_t)&amp;UART-&gt;DR;   /* source: peripheral data register */
+    DMA1_CH5-&gt;CMAR  = (uint32_t)rx_buf;      /* destination: memory              */
+    DMA1_CH5-&gt;CNDTR = sizeof rx_buf;         /* number of transfers              */
+    DMA1_CH5-&gt;CCR   = DMA_MINC | DMA_TCIE | DMA_EN;   /* increment mem, IRQ on done */
+    UART-&gt;CR3      |= UART_DMAR;             /* let the UART request DMA          */
+}</code></pre>
+<p>(Register names follow an STM32F1-style DMA. Other controllers differ in detail but take the same four pieces of information.)</p>
+<p><strong>Good:</strong> high throughput at almost no CPU cost; the CPU can even sleep during the transfer. <strong>Bad:</strong> setup cost makes it pointless for a few bytes, there are a limited number of channels, and it brings memory-system problems: the CPU's cache may hold stale data (see <a href="dma-cache-coherency.html">DMA and Cache Coherency</a>), and buffers must stay valid and untouched while the transfer runs.</p>
+
+<h2 id="choosing">Choosing</h2>
+<table>
+<thead><tr><th></th><th>Polling</th><th>Interrupts</th><th>DMA</th></tr></thead>
+<tbody>
+<tr><td>CPU cost while waiting</td><td>100%</td><td>None</td><td>None</td></tr>
+<tr><td>CPU cost per byte</td><td>Copy loop</td><td>Interrupt overhead + copy</td><td>None</td></tr>
+<tr><td>Setup cost</td><td>None</td><td>Small</td><td>Larger</td></tr>
+<tr><td>Best for</td><td>Very short waits, boot code, crash paths</td><td>Sporadic events, low data rates</td><td>Bulk data: audio, ADC streams, network, storage</td></tr>
+<tr><td>Complexity</td><td>Lowest</td><td>Concurrency with ISR</td><td>Buffers, caches, error handling</td></tr>
+</tbody>
+</table>
+
+<h2 id="real-drivers-combine-all-three">Real drivers combine all three</h2>
+<ul>
+<li><strong>UART receive:</strong> DMA into a circular buffer, plus an "idle line" interrupt so a short message is processed without waiting for the buffer to fill.</li>
+<li><strong>Network cards:</strong> DMA rings for packets; an interrupt announces new packets; then the driver switches interrupts off and <em>polls</em> the ring until it is empty. Linux calls this NAPI. It gives interrupt-like latency at low load and polling-like efficiency at high load.</li>
+<li><strong>Storage (NVMe):</strong> DMA for data, completion queues in memory, and interrupts or polling for completions depending on the latency target.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Polling spends CPU time to get simplicity. Interrupts let the CPU work or sleep until an event, at a small cost per event. DMA moves blocks of data without the CPU and interrupts once per block. Use polling for tiny waits, interrupts for sporadic events, DMA for streams, and combine them when load varies.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="cortex-m-reset-to-main.html"><small>Previous in Embedded firmware</small><span>From Reset to main() on an ARM Cortex-M</span></a><a class="pn next" href="nor-vs-nand.html"><small>Next in Embedded firmware</small><span>NOR vs. NAND Flash: What&#x27;s the Difference?</span></a></nav>
 </article></div>
 </main>
 <footer class="foot"><div class="wrap">

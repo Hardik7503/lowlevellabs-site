@@ -2,17 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DMA and Cache Coherency, Explained | LowLevel Labs</title>
-<meta name="description" content="Understand DMA and CPU cache coherency in embedded systems.">
+<title>DMA and Cache Coherency | LowLevel Labs</title>
+<meta name="description" content="Why a CPU and a DMA device can see different data in the same RAM, what clean and invalidate mean, the two transfer directions, and how the Linux DMA API handles it for you.">
 <link rel="canonical" href="https://lowlevellabs.in/articles/dma-cache-coherency.html">
-<meta property="og:title" content="DMA and Cache Coherency, Explained"><meta property="og:description" content="Understand DMA and CPU cache coherency in embedded systems.">
+<meta property="og:title" content="DMA and Cache Coherency"><meta property="og:description" content="Why a CPU and a DMA device can see different data in the same RAM, what clean and invalidate mean, the two transfer directions, and how the Linux DMA API handles it for you.">
 <meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/dma-cache-coherency.html">
 <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../styles.css?v=20261120">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "DMA and Cache Coherency, Explained", "description": "Understand DMA and CPU cache coherency in embedded systems.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "DMA and Cache Coherency", "description": "Why a CPU and a DMA device can see different data in the same RAM, what clean and invalidate mean, the two transfer directions, and how the Linux DMA API handles it for you.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -25,14 +25,121 @@
 <main id="main">
 <header class="article-head"><div class="wrap">
 <div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/cpu.html">CPU internals</a></div>
-<h1>DMA and Cache Coherency, Explained</h1>
-<p class="lede">A CPU and a DMA-capable device can access the same RAM but still disagree about what data is current.</p>
-<div class="byline"><span>3 min read</span><span>22 Oct 2026</span></div>
+<h1>DMA and Cache Coherency</h1>
+<p class="lede">The CPU looks at memory through its cache. A DMA device often looks at RAM directly. When the two views disagree, you get corrupted packets, stale sensor data and bugs that disappear when you add a printf.</p>
+<div class="byline"><span>10 min read</span><span>22 Oct 2026</span> <span>Updated 20 Nov 2026</span></div>
 </div></header>
-<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#the-core-idea">The core idea</a></li><li><a href="#two-common-directions">Two common directions</a></li><li><a href="#use-the-operating-system-s-dma-api">Use the operating system&#x27;s DMA API</a></li><li><a href="#practical-checklist">Practical checklist</a></li></ol></aside>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#two-views-of-the-same-memory">Two views of the same memory</a></li><li><a href="#two-cache-operations-you-need">Two cache operations you need</a></li><li><a href="#direction-1-cpu-device-transmit">Direction 1: CPU → device (transmit)</a></li><li><a href="#direction-2-device-cpu-receive">Direction 2: device → CPU (receive)</a></li><li><a href="#the-cache-line-sharing-trap">The cache-line sharing trap</a></li><li><a href="#bare-metal-example-cortex-m7">Bare-metal example (Cortex-M7)</a></li><li><a href="#in-linux-use-the-dma-api">In Linux: use the DMA API</a></li><li><a href="#hardware-coherent-dma">Hardware-coherent DMA</a></li><li><a href="#symptoms-that-point-to-this-bug">Symptoms that point to this bug</a></li></ol></aside>
 <article class="prose">
-<h2 id="the-core-idea">The core idea</h2><p>CPUs often cache recently used memory to reduce latency. A DMA-capable peripheral may read or write RAM without going through the CPU's caches. On a non-coherent system, cached data and RAM can temporarily differ, so software must follow the platform's DMA and cache-maintenance rules.</p><h2 id="two-common-directions">Two common directions</h2><h3>CPU → device (DMA reads memory)</h3><p>The CPU prepares a buffer, then the device reads it. If the CPU has dirty cache lines, software may need to synchronize the buffer so the device sees the latest contents before starting DMA.</p><h3>Device → CPU (DMA writes memory)</h3><p>The device writes incoming data to RAM. Before the CPU consumes that data, software may need to invalidate or otherwise synchronize cache state so stale cached lines are not used.</p><h2 id="use-the-operating-system-s-dma-api">Use the operating system's DMA API</h2><p>In Linux drivers, prefer the documented DMA mapping and synchronization APIs—such as <code>dma_map_single()</code>, <code>dma_unmap_single()</code>, or the appropriate <code>dma_sync_*</code> calls for the buffer type and mapping lifecycle—instead of manually guessing cache operations. Coherent DMA allocations and streaming mappings have different rules.</p><h2 id="practical-checklist">Practical checklist</h2><ul><li>Confirm whether the platform and device path are cache-coherent.</li><li>Use DMA-capable memory and mapping APIs correctly.</li><li>Observe DMA direction and mapping lifetime.</li><li>Do not let the CPU and device access a streaming buffer concurrently unless the API and design explicitly support it.</li><li>Follow the kernel documentation for the target architecture and device.</li></ul>
-<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="armv7-vs-armv8-aarch64.html"><small>Previous in CPU internals</small><span>Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64</span></a><a class="pn next" href="cache-coherence-mesi.html"><small>Next in CPU internals</small><span>MESI Cache Coherence: Why Multicore CPUs Need It</span></a></nav>
+<h2 id="two-views-of-the-same-memory">Two views of the same memory</h2>
+<p>The CPU almost never reads or writes RAM directly. It works on copies in its <strong>data cache</strong>, and the cache writes changes back to RAM later, when it needs the space. That is invisible to software running on the CPU, because every CPU access goes through the same cache.</p>
+<p>A <strong>DMA</strong> device (Ethernet controller, SD host, camera interface) reads and writes RAM on its own (see <a href="interrupts-polling-dma.html">Interrupts vs Polling vs DMA</a>). On many embedded SoCs, that traffic <em>does not go through the CPU's cache</em>, and the cache is not told about it. Now there are two copies of the data that can disagree.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 230" role="img" aria-label="CPU accesses memory through its data cache while a DMA device accesses RAM directly, bypassing the cache">
+<rect class="ink" x="20" y="20" width="140" height="56" rx="6"/><text class="h" x="70" y="54">CPU</text>
+<rect class="cu" x="20" y="110" width="140" height="56" rx="6"/><text class="h" x="36" y="134">Data cache</text><text class="m s" x="36" y="154">buf: "NEW"</text>
+<path class="ln" d="M90 76v34M90 166v30H300"/>
+<rect class="sg" x="300" y="160" width="160" height="56" rx="6"/><text class="h" x="316" y="184">RAM</text><text class="m s" x="316" y="204">buf: "OLD"</text>
+<rect class="wn" x="520" y="20" width="140" height="56" rx="6"/><text class="h" x="536" y="44">DMA device</text><text class="s" x="536" y="64">e.g. Ethernet MAC</text>
+<path class="lc" d="M590 76v112H460"/><text class="s tc h" x="476" y="148">reads RAM directly:</text><text class="s tc h" x="476" y="166">sends "OLD"</text>
+</svg><figcaption>The CPU wrote "NEW" into its cache, but the line has not been written back yet. The device reads RAM and transmits stale data.</figcaption></figure>
+
+<h2 id="two-cache-operations-you-need">Two cache operations you need</h2>
+<ul>
+<li><strong>Clean</strong> (also called <em>flush</em> or <em>write back</em>): write any modified cache lines for an address range out to RAM. The cache keeps its copy. Use it before a device <em>reads</em> memory.</li>
+<li><strong>Invalidate</strong>: throw away the cache's copy of an address range, without writing it back. The next CPU read fetches fresh data from RAM. Use it before the CPU <em>reads</em> memory a device wrote.</li>
+</ul>
+<p>Both work on whole cache lines (commonly 64 bytes), which matters later.</p>
+
+<h2 id="direction-1-cpu-device-transmit">Direction 1: CPU → device (transmit)</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 120" role="img" aria-label="Transmit sequence: CPU writes buffer, clean cache, start DMA, device reads RAM">
+<g transform="translate(10,30)">
+<rect class="b" x="0" y="0" width="150" height="50" rx="6"/><text class="s" x="12" y="22">1. CPU fills buffer</text><text class="s" x="12" y="40">(lands in cache)</text>
+<rect class="cu" x="170" y="0" width="150" height="50" rx="6"/><text class="s" x="182" y="22">2. Clean cache lines</text><text class="s" x="182" y="40">→ RAM is current</text>
+<rect class="b" x="340" y="0" width="150" height="50" rx="6"/><text class="s" x="352" y="22">3. Barrier, then</text><text class="s" x="352" y="40">ring the doorbell</text>
+<rect class="sg" x="510" y="0" width="150" height="50" rx="6"/><text class="s" x="522" y="22">4. Device reads RAM</text><text class="s" x="522" y="40">gets correct data</text>
+</g>
+</svg><figcaption>Transmit: clean before the device reads.</figcaption></figure>
+
+<h2 id="direction-2-device-cpu-receive">Direction 2: device → CPU (receive)</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 120" role="img" aria-label="Receive sequence: invalidate cache, device writes RAM, completion interrupt, invalidate again, CPU reads">
+<g transform="translate(10,30)">
+<rect class="cu" x="0" y="0" width="150" height="50" rx="6"/><text class="s" x="12" y="22">1. Invalidate (or clean</text><text class="s" x="12" y="40">+ invalidate) buffer</text>
+<rect class="sg" x="170" y="0" width="150" height="50" rx="6"/><text class="s" x="182" y="22">2. Device writes RAM</text><text class="s" x="182" y="40">CPU hands off buffer</text>
+<rect class="b" x="340" y="0" width="150" height="50" rx="6"/><text class="s" x="352" y="22">3. Completion IRQ</text>
+<rect class="cu" x="510" y="0" width="150" height="50" rx="6"/><text class="s" x="522" y="22">4. Invalidate again,</text><text class="s" x="522" y="40">then CPU reads</text>
+</g>
+</svg><figcaption>Receive: invalidate so the CPU cannot read stale cached data, and so no dirty line is written back over the device's data.</figcaption></figure>
+<p>Why invalidate before <em>and</em> after? Before, because a dirty line evicted during the transfer would overwrite what the device wrote. After, because the CPU may have speculatively loaded the buffer into its cache while the transfer was running.</p>
+
+<h2 id="the-cache-line-sharing-trap">The cache-line sharing trap</h2>
+<p>Invalidate works on whole lines. If a receive buffer starts or ends in the middle of a line that also holds an unrelated variable, invalidating the buffer also throws away any pending update to that variable.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 120" role="img" aria-label="A DMA buffer sharing a cache line with an unrelated variable; invalidating the buffer discards the variable's update">
+<g transform="translate(20,30)">
+<rect class="b" x="0" y="0" width="200" height="40"/><text class="m s" x="10" y="25">line N</text>
+<rect class="wn" x="200" y="0" width="200" height="40"/><rect class="wn" x="200" y="0" width="70" height="40" style="fill:var(--copper-soft)"/><text class="m s" x="206" y="25">count</text><text class="m s" x="286" y="25">rx_buf …</text>
+<rect class="sg" x="400" y="0" width="240" height="40"/><text class="m s" x="410" y="25">rx_buf (line N+2) …</text>
+<text class="s" x="200" y="64">Invalidating line N+1 for rx_buf also discards a new value of "count".</text>
+</g>
+</svg><figcaption>Align DMA buffers to the cache-line size and pad them to a whole number of lines.</figcaption></figure>
+<pre><code class="language-c">/* Bare metal: give DMA buffers their own cache lines */
+#define CACHE_LINE 64
+static uint8_t rx_buf[1536] __attribute__((aligned(CACHE_LINE)));   /* 1536 = 24 lines */</code></pre>
+<h2 id="bare-metal-example-cortex-m7">Bare-metal example (Cortex-M7)</h2>
+<pre><code class="language-c">/* CMSIS cache maintenance on a Cortex-M7 with D-cache enabled */
+void eth_send(const void *frame, size_t len)
+{
+    memcpy(tx_buf, frame, len);
+    SCB_CleanDCache_by_Addr((uint32_t *)tx_buf, (int32_t)len);     /* CPU → RAM */
+    __DSB();                                                        /* finish before doorbell */
+    ETH_DMA-&gt;TX_POLL = 1;
+}
+
+void eth_rx_done_irq(void)
+{
+    SCB_InvalidateDCache_by_Addr((uint32_t *)rx_buf, sizeof rx_buf); /* drop stale lines */
+    process_frame(rx_buf);
+}</code></pre>
+<p>An alternative on microcontrollers is to place DMA buffers in a region the MPU marks <strong>non-cacheable</strong>. Then no maintenance is needed, at the cost of slower CPU access to that memory.</p>
+
+<h2 id="in-linux-use-the-dma-api">In Linux: use the DMA API</h2>
+<p>Linux drivers never call cache instructions directly. The DMA API knows whether the device is coherent and does the right thing, including bounce buffers and IOMMU mappings:</p>
+<pre><code class="language-c">/* Streaming mapping: one transfer, CPU gives buffer ownership to the device */
+dma_addr_t dma = dma_map_single(dev, buf, len, DMA_TO_DEVICE);   /* cleans cache  */
+if (dma_mapping_error(dev, dma))
+    return -ENOMEM;
+start_device_tx(dma, len);
+/* ... completion interrupt ... */
+dma_unmap_single(dev, dma, len, DMA_TO_DEVICE);
+
+/* Receive buffer reused many times */
+dma_sync_single_for_cpu(dev, dma, len, DMA_FROM_DEVICE);    /* invalidate, CPU may read */
+consume(buf);
+dma_sync_single_for_device(dev, dma, len, DMA_FROM_DEVICE); /* give back to device */
+
+/* Coherent (consistent) mapping: long-lived descriptor rings */
+void *ring = dma_alloc_coherent(dev, size, &amp;ring_dma, GFP_KERNEL);</code></pre>
+<p>The rule of ownership: between <code>map</code> (or <code>sync_for_device</code>) and <code>unmap</code> (or <code>sync_for_cpu</code>), the <strong>device</strong> owns the buffer and the CPU must not touch it.</p>
+<table>
+<thead><tr><th>Mapping type</th><th>Use for</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td>Streaming (<code>dma_map_single</code>)</td><td>Data buffers, packets, blocks</td><td>Cache maintenance per transfer; CPU access to buffer is fully cached</td></tr>
+<tr><td>Coherent (<code>dma_alloc_coherent</code>)</td><td>Descriptor rings, mailboxes shared continuously</td><td>Often uncached on non-coherent systems: slower CPU access</td></tr>
+</tbody>
+</table>
+
+<h2 id="hardware-coherent-dma">Hardware-coherent DMA</h2>
+<p>Some systems make DMA <em>coherent</em>: device traffic goes through the interconnect, which snoops CPU caches (x86 PCIe, Arm systems with ACE-Lite or CHI interconnects). In Linux the Device Tree property <code>dma-coherent</code> tells the kernel. Cache maintenance is then unnecessary, but barriers for ordering still are, and the same driver code using the DMA API works on both kinds of system.</p>
+
+<h2 id="symptoms-that-point-to-this-bug">Symptoms that point to this bug</h2>
+<ul>
+<li>Received data is correct except for occasional 32- or 64-byte chunks of old content.</li>
+<li>The first packet after boot is fine; later ones contain fragments of earlier packets.</li>
+<li>The bug disappears when you add a <code>printf</code>, enable debug logging or disable the data cache.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>On non-coherent systems, clean the cache before a device reads memory and invalidate it before the CPU reads what a device wrote. Align buffers to cache lines. In Linux, use the DMA API, respect buffer ownership, and let it decide what maintenance the platform needs.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="cache-coherence-mesi.html"><small>Previous in CPU internals</small><span>MESI Cache Coherence Explained</span></a><a class="pn next" href="armv7-vs-armv8-aarch64.html"><small>Next in CPU internals</small><span>Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64</span></a></nav>
 </article></div>
 </main>
 <footer class="foot"><div class="wrap">
