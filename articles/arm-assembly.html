@@ -1,35 +1,42 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARM Assembly | LowLevel Labs</title>
 <meta name="description" content="ARM 32-bit assembly programming resources, corrected exercises, and code examples from LowLevel Labs.">
-<title>ARM Assembly — LowLevel Labs</title>
+<link rel="canonical" href="https://lowlevellabs.in/articles/arm-assembly.html">
+<meta property="og:title" content="ARM Assembly"><meta property="og:description" content="ARM 32-bit assembly programming resources, corrected exercises, and code examples from LowLevel Labs.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/arm-assembly.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="../styles.css?v=20261022-premium-lab">
-<script defer src="../script.js"></script>
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "ARM Assembly", "description": "ARM 32-bit assembly programming resources, corrected exercises, and code examples from LowLevel Labs.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/asm.html">Assembly</a></div>
+<h1>ARM Assembly</h1>
+<p class="lede">A collection of ARM 32-bit assembly learning resources: a programming guide in PDF format and corrected exercise solutions with complete assembly code.</p>
+<div class="byline"><span>Exercises</span><span>22 Oct 2026</span></div>
+</div></header>
+<div class="wrap layout"><div></div>
+<article class="prose">
 <style>
 .resource-panel{margin-top:2rem;padding:1.5rem;border:1px solid var(--border-color,#ddd);border-radius:16px;background:var(--surface,#fff)}.resource-panel h2{margin-top:0}.resource-actions{display:flex;gap:1rem;flex-wrap:wrap;margin:1.25rem 0}.resource-actions a{display:inline-block;padding:.8rem 1rem;border-radius:8px;text-decoration:none;border:1px solid currentColor}.resource-note{opacity:.8}
-</style>
-<style>
+</style><style>
 .code-resource{margin-top:2rem}.asm-toolbar{display:flex;gap:.7rem;flex-wrap:wrap;margin:1rem 0 1.5rem}.asm-toolbar button{cursor:pointer;padding:.65rem .9rem;border:1px solid #bbb;border-radius:8px;background:transparent;color:inherit}.asm-exercises h2{font-size:1.35rem;margin-top:2rem}.asm-exercises h3{font-size:1.1rem;margin-top:1.5rem}.asm-exercises pre.asm-code{overflow-x:auto;padding:1rem;border-radius:10px;background:#171b22;color:#e8edf2;font-size:.9rem;line-height:1.55;white-space:pre}.asm-exercises pre code{color:inherit}.asm-exercises p{line-height:1.65}.asm-exercises hr{margin:1.5rem 0;border:0;border-top:1px solid #ddd}.fix-mark,.ok-mark{font-size:.85em}
-</style></head>
-<body>
-<header class="site-header"><div class="container nav-wrap">
-<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a>
-<button class="menu-toggle" id="menuToggle" aria-label="Open navigation" aria-expanded="false">☰</button>
-<nav class="nav-links" id="navLinks" aria-label="Main navigation"><a href="../index.html">Home</a><a href="../articles.html">Articles</a><a href="../projects.html" class="current">Projects</a><a href="../index.html#solar-system">Topics</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
-</div></header>
-<main id="main" class="container section">
-<div class="eyebrow">ENGINEERING PROJECTS / PROCESSOR ARCHITECTURE</div>
-<h1>ARM Assembly</h1>
-<p class="hero-copy">A collection of ARM 32-bit assembly learning resources: a programming guide in PDF format and corrected exercise solutions with complete assembly code.</p>
-<section class="resource-panel">
-<h2>ARM 32-bit Assembly Programming Guide</h2>
-<p>Read the guide in your browser or download the PDF for offline study.</p>
-<div class="resource-actions"><a href="../assets/ARM_32bit_Assembly_Programming.pdf" target="_blank" rel="noopener">Read PDF ↗</a><a href="../assets/ARM_32bit_Assembly_Programming.pdf" download>Download PDF ↓</a></div>
-</section>
-<section class="resource-panel code-resource"><h2>ARM 32bit Assembly Exercises</h2><p>All exercises and their complete source code are included below. Expand a program to inspect its solution.</p><div class="asm-toolbar"><button type="button" id="expandAll">Expand all programs</button><button type="button" id="collapseAll">Collapse all programs</button></div><div class="asm-exercises"><h2>Program 1: Sum 1 to 5 <span class="ok-mark"></span></h2>
+</style>
+<section class="resource-panel code-resource"><h2 id="arm-32bit-assembly-exercises">ARM 32bit Assembly Exercises</h2><p>All exercises and their complete source code are included below. Expand a program to inspect its solution.</p><div class="asm-toolbar"><button type="button" id="expandAll">Expand all programs</button><button type="button" id="collapseAll">Collapse all programs</button></div><div class="asm-exercises"><h2 id="program-1-sum-1-to-5">Program 1: Sum 1 to 5 <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Write an ARM assembly program to calculate the sum of the integers from 1 through 5 and return the result.</p>
 <p>Expected: 15</p>
 <pre class="asm-code"><code>.section .text
@@ -46,7 +53,7 @@ loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 2: Max element <span class="ok-mark"></span></h2>
+<h2 id="program-2-max-element">Program 2: Max element <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find and return its maximum element.</p>
 <p>Expected: 23</p>
 <pre class="asm-code"><code>.section .data
@@ -71,7 +78,7 @@ loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 3: Sum of all elements <span class="ok-mark"></span></h2>
+<h2 id="program-3-sum-of-all-elements">Program 3: Sum of all elements <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to calculate the sum of all its elements.</p>
 <p>Expected: 30</p>
 <pre class="asm-code"><code>.section .data
@@ -95,7 +102,7 @@ arr_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 4: Sum elements divisible by 3 <span class="ok-mark"></span></h2>
+<h2 id="program-4-sum-elements-divisible-by-3">Program 4: Sum elements divisible by 3 <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to add only the elements that are divisible by 3.</p>
 <p>Expected: 24. Requires an ARM CPU supporting <code>sdiv</code>.</p>
 <pre class="asm-code"><code>.section .data
@@ -125,7 +132,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 5: Minimum element <span class="ok-mark"></span></h2>
+<h2 id="program-5-minimum-element">Program 5: Minimum element <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array that may contain negative values, write an ARM assembly program to find its minimum element.</p>
 <p>Expected: -8 (exit status 248)</p>
 <pre class="asm-code"><code>.section .data
@@ -150,7 +157,7 @@ arr_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 6: Maximum absolute value <span class="fix-mark"></span></h2>
+<h2 id="program-6-maximum-absolute-value">Program 6: Maximum absolute value <span class="fix-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array containing positive and negative values, write an ARM assembly program to find the largest absolute value among its elements.</p>
 <p>Expected: 22. The loop comparison must be <code>cmp r1, r2</code>, not <code>cmp r2, r1</code>.</p>
 <pre class="asm-code"><code>.section .data
@@ -182,7 +189,7 @@ arr_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 7: Index of maximum value <span class="ok-mark"></span></h2>
+<h2 id="program-7-index-of-maximum-value">Program 7: Index of maximum value <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the index of its maximum element. Use zero-based indexing.</p>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
@@ -212,7 +219,7 @@ exit:
     mov r0, r5
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 8: Count values divisible by 4 <span class="ok-mark"></span></h2>
+<h2 id="program-8-count-values-divisible-by-4">Program 8: Count values divisible by 4 <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to count how many elements are divisible by 4.</p>
 <p>Expected: 4</p>
 <pre class="asm-code"><code>.section .data
@@ -239,7 +246,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 9: Index of first even element <span class="ok-mark"></span></h2>
+<h2 id="program-9-index-of-first-even-element">Program 9: Index of first even element <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the zero-based index of the first even element. Return -1 if no even element exists.</p>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
@@ -267,7 +274,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 10: Last index of element greater than 10 <span class="ok-mark"></span></h2>
+<h2 id="program-10-last-index-of-element-greater-than-10">Program 10: Last index of element greater than 10 <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the zero-based index of the last element greater than 10. Return -1 if no such element exists.</p>
 <p>Expected: 5</p>
 <pre class="asm-code"><code>.section .data
@@ -294,7 +301,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 11: Count negative numbers <span class="ok-mark"></span></h2>
+<h2 id="program-11-count-negative-numbers">Program 11: Count negative numbers <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to count the number of negative elements.</p>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
@@ -321,7 +328,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 12: Smallest negative number <span class="ok-mark"></span></h2>
+<h2 id="program-12-smallest-negative-number">Program 12: Smallest negative number <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the smallest (most negative) negative element. Return 0 if the array contains no negative values.</p>
 <p>Expected: -7 (exit status 249)</p>
 <pre class="asm-code"><code>.section .data
@@ -350,7 +357,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 13: Index of smallest negative number <span class="ok-mark"></span></h2>
+<h2 id="program-13-index-of-smallest-negative-number">Program 13: Index of smallest negative number <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to find the zero-based index of the smallest negative element. Return -1 if no negative element exists.</p>
 <p>Expected: 3</p>
 <pre class="asm-code"><code>.section .data
@@ -384,7 +391,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 14: Sum of even numbers <span class="ok-mark"></span></h2>
+<h2 id="program-14-sum-of-even-numbers">Program 14: Sum of even numbers <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to calculate the sum of all even elements, including negative even values.</p>
 <p>Expected: 24</p>
 <pre class="asm-code"><code>.section .data
@@ -411,7 +418,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 15: Count multiples of 8 <span class="ok-mark"></span></h2>
+<h2 id="program-15-count-multiples-of-8">Program 15: Count multiples of 8 <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given an integer array, write an ARM assembly program to count the elements that are multiples of 8.</p>
 <p>Expected: 4</p>
 <pre class="asm-code"><code>.section .data
@@ -438,7 +445,7 @@ next_loop:
 exit:
     mov r7, #1
     svc #0</code></pre>
-<h2>Program 16: Structure, set READY bit <span class="fix-mark"></span></h2>
+<h2 id="program-16-structure-set-ready-bit">Program 16: Structure, set READY bit <span class="fix-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Given a structure in memory with an ID field, a value field, and a status field, write an ARM assembly routine that sets bit 0 (READY) in the status field without changing the other status bits.</p>
 <p>Expected: 1. Fixed <code>.global _start</code> spacing and <code>pop {lr}</code>.</p>
 <pre class="asm-code"><code>.section .data
@@ -462,7 +469,7 @@ set_ready:
     str r1, [r0, #8]
     pop {lr}
     bx lr</code></pre>
-<h2>Program 17: Function sum_array <span class="fix-mark"></span></h2>
+<h2 id="program-17-function-sum-array">Program 17: Function sum_array <span class="fix-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Write an ARM assembly function named sum_array that accepts an array address and its length, then returns the sum of all array elements.</p>
 <p>Expected: 100. Fixed array addressing to use loop index <code>r4</code>.</p>
 <pre class="asm-code"><code>.section .data
@@ -492,7 +499,7 @@ done:
     mov r0, r5
     pop {r4-r6, lr}
     bx lr</code></pre>
-<h2>Program 18: Function max_array <span class="fix-mark"></span></h2>
+<h2 id="program-18-function-max-array">Program 18: Function max_array <span class="fix-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Write an ARM assembly function named max_array that accepts an array address and its length, then returns the maximum element.</p>
 <p>Expected: 99. Fixed invalid <code>mov r5, [r0]</code> to <code>ldr r5, [r0]</code> and corrected the max update direction.</p>
 <pre class="asm-code"><code>.section .data
@@ -525,7 +532,7 @@ done:
     mov r0, r5
     pop {r4-r6, lr}
     bx lr</code></pre>
-<h2>Program 19: Function min_max <span class="ok-mark"></span></h2>
+<h2 id="program-19-function-min-max">Program 19: Function min_max <span class="ok-mark"></span></h2>
 <p class="program-question"><strong>Question:</strong> Write an ARM assembly function named min_max that accepts an array address and its length, then returns the minimum element in r0 and the maximum element in r1.</p>
 <p>Expected: min = 3 (r0), max = 88 (r1). The exit code displays the low 8 bits of r0.</p>
 <pre class="asm-code"><code>.section .data
@@ -562,10 +569,21 @@ done:
     bx lr</code></pre>
 </div></section>
 <p style="margin-top:2rem"><a href="../projects.html">← Back to Engineering Projects</a></p>
-</main>
-<footer class="site-footer"><div class="container footer-inner"><a class="brand footer-brand" href="../index.html"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a><p>Technical notes on embedded systems.</p><div class="footer-links"><a href="../articles.html">Articles</a><a href="../projects.html">Projects</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></div><small class="copyright">© <span id="year">2026</span> LowLevel Labs</small></div></footer>
-<!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script><!-- End Cloudflare Web Analytics -->
 <script>
 document.addEventListener('DOMContentLoaded',function(){const root=document.querySelector('.asm-exercises');if(!root)return;const headings=[...root.querySelectorAll('h2,h3')];headings.forEach(h=>{if(h.textContent.trim().startsWith('Program ')){const nodes=[];let n=h.nextElementSibling;while(n&&!/^H[23]$/.test(n.tagName)){nodes.push(n);n=n.nextElementSibling;}const d=document.createElement('details');d.className='asm-program';const s=document.createElement('summary');const programNumber=h.textContent.match(/^Program\s+\d+/)?.[0]||'Program';const question=nodes.find(el=>el.matches&&el.matches('p.program-question'))?.textContent.replace(/^Question:\s*/,'')||'';s.textContent=programNumber+': '+question;d.appendChild(s);nodes.forEach(el=>d.appendChild(el));h.replaceWith(d);}});const details=[...root.querySelectorAll('details.asm-program')];document.getElementById('expandAll')?.addEventListener('click',()=>details.forEach(d=>d.open=true));document.getElementById('collapseAll')?.addEventListener('click',()=>details.forEach(d=>d.open=false));});
 </script>
-</body></html>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="arm-32bit-assembly-programming.html"><small>Previous in Assembly</small><span>ARM 32-bit Assembly Programming</span></a><a class="pn next" href="x86-64-assembly-programming.html"><small>Next in Assembly</small><span>x86-64 Assembly Programming: NASM and GAS</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calling Conventions and Stack Frames: AArch64 vs x86-64 | LowLevel Labs</title>
+<meta name="description" content="How arguments, return values, saved registers and stack frames work under AAPCS64 and the System V x86-64 ABI, with compiler output you can reproduce.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/calling-conventions-aarch64-x86-64.html">
+<meta property="og:title" content="Calling Conventions and Stack Frames: AArch64 vs x86-64"><meta property="og:description" content="How arguments, return values, saved registers and stack frames work under AAPCS64 and the System V x86-64 ABI, with compiler output you can reproduce.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/calling-conventions-aarch64-x86-64.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Calling Conventions and Stack Frames: AArch64 vs x86-64", "description": "How arguments, return values, saved registers and stack frames work under AAPCS64 and the System V x86-64 ABI, with compiler output you can reproduce.", "datePublished": "2026-11-20", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/asm.html">Assembly</a></div>
+<h1>Calling Conventions and Stack Frames: AArch64 vs x86-64</h1>
+<p class="lede">A calling convention is the contract that lets separately compiled functions call each other. Knowing it lets you read crash dumps, write assembly that links with C, and understand what the compiler generated.</p>
+<div class="byline"><span>11 min read</span><span>20 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#what-the-contract-covers">What the contract covers</a></li><li><a href="#register-roles-side-by-side">Register roles side by side</a></li><li><a href="#a-leaf-function">A leaf function</a></li><li><a href="#a-non-leaf-function-and-its-frame">A non-leaf function and its frame</a></li><li><a href="#stack-alignment-and-why-it-crashes-things">Stack alignment, and why it crashes things</a></li><li><a href="#reading-a-crash-with-this-knowledge">Reading a crash with this knowledge</a></li><li><a href="#calling-c-from-assembly">Calling C from assembly</a></li></ol></aside>
+<article class="prose">
+<h2 id="what-the-contract-covers">What the contract covers</h2>
+<p>An ABI's procedure-call standard answers a fixed set of questions. Every call in your program depends on both sides answering them the same way.</p>
+<ul>
+<li>Where do arguments go: registers or stack, and in which order?</li>
+<li>Where does the return value come back?</li>
+<li>Which registers may a function overwrite freely (<strong>caller-saved</strong>), and which must it restore before returning (<strong>callee-saved</strong>)?</li>
+<li>How must the stack pointer be aligned, and where is the return address?</li>
+</ul>
+<p>We compare the two you are most likely to meet: <strong>AAPCS64</strong> for 64-bit Arm (Linux, Android, most RTOSes on Cortex-A) and the <strong>System V AMD64 ABI</strong> used by Linux, BSD and macOS on x86-64. Windows x64 uses a different convention, noted at the end.</p>
+
+<h2 id="register-roles-side-by-side">Register roles side by side</h2>
+<table>
+<thead><tr><th>Role</th><th>AArch64 (AAPCS64)</th><th>x86-64 (System V)</th></tr></thead>
+<tbody>
+<tr><td>Integer and pointer arguments</td><td><code>x0</code>–<code>x7</code></td><td><code>rdi, rsi, rdx, rcx, r8, r9</code></td></tr>
+<tr><td>Floating-point and vector arguments</td><td><code>v0</code>–<code>v7</code></td><td><code>xmm0</code>–<code>xmm7</code></td></tr>
+<tr><td>Return value</td><td><code>x0</code> (and <code>x1</code> for 128-bit)</td><td><code>rax</code> (and <code>rdx</code>)</td></tr>
+<tr><td>Large struct return</td><td>Caller passes buffer address in <code>x8</code></td><td>Caller passes buffer address as a hidden first argument in <code>rdi</code></td></tr>
+<tr><td>Callee-saved</td><td><code>x19</code>–<code>x28</code>, <code>x29</code> (FP), and the low 64 bits of <code>v8</code>–<code>v15</code></td><td><code>rbx, rbp, r12</code>–<code>r15</code></td></tr>
+<tr><td>Scratch (caller-saved)</td><td><code>x9</code>–<code>x15</code>, plus argument registers</td><td><code>rax, rcx, rdx, rsi, rdi, r8</code>–<code>r11</code></td></tr>
+<tr><td>Return address</td><td>In <code>x30</code> (LR), set by <code>bl</code></td><td>Pushed on the stack by <code>call</code></td></tr>
+<tr><td>Special</td><td><code>x16</code>/<code>x17</code> veneer scratch, <code>x18</code> platform register</td><td><code>al</code> = number of vector registers used, for variadic calls</td></tr>
+<tr><td>Stack alignment</td><td>16 bytes, enforced by hardware when SP is used as a base</td><td>16 bytes at the <code>call</code> instruction</td></tr>
+</tbody>
+</table>
+
+<h2 id="a-leaf-function">A leaf function</h2>
+<p>A leaf calls nothing, so neither architecture needs a stack frame. Compile with <code>gcc -O2 -S</code> or paste into Compiler Explorer:</p>
+<pre><code class="language-c">long mac(long acc, long a, long b) { return acc + a * b; }</code></pre>
+<pre><code class="language-armasm">// AArch64: args in x0, x1, x2; result in x0
+mac:
+    madd    x0, x1, x2, x0      // x0 = x1 * x2 + x0
+    ret                         // branch to x30</code></pre>
+<pre><code class="language-x86asm">; x86-64 SysV: args in rdi, rsi, rdx; result in rax
+mac:
+    imul    rsi, rdx            ; rsi = a * b
+    lea     rax, [rsi + rdi]    ; rax = a*b + acc
+    ret                         ; pop return address into rip</code></pre>
+<p>The difference in return mechanism is the first thing to internalise. On Arm, <code>bl</code> puts the return address in a register, so a leaf never touches memory. On x86, <code>call</code> always pushes it onto the stack.</p>
+
+<h2 id="a-non-leaf-function-and-its-frame">A non-leaf function and its frame</h2>
+<pre><code class="language-c">long scale_sum(long *v, long n, long k)
+{
+    long s = sum(v, n);   /* a call: must preserve k across it */
+    return s * k;
+}</code></pre>
+<pre><code class="language-armasm">scale_sum:
+    stp     x29, x30, [sp, #-32]!   // push FP and LR, allocate 32 bytes
+    mov     x29, sp                 // new frame pointer
+    str     x19, [sp, #16]          // save callee-saved x19
+    mov     x19, x2                 // keep k in x19 across the call
+    bl      sum                     // x0 = sum(v, n); clobbers x30
+    mul     x0, x0, x19
+    ldr     x19, [sp, #16]
+    ldp     x29, x30, [sp], #32     // restore FP, LR, free frame
+    ret</code></pre>
+<pre><code class="language-x86asm">scale_sum:
+    push    rbx                     ; save callee-saved rbx (also realigns rsp to 16)
+    mov     rbx, rdx                ; keep k in rbx across the call
+    call    sum                     ; rax = sum(v, n)
+    imul    rax, rbx
+    pop     rbx
+    ret</code></pre>
+<p>Both compilers solve the same problem the same way: the value needed after the call goes into a callee-saved register, which the function itself must save first. The AArch64 version must also save <code>x30</code>, because <code>bl sum</code> overwrites it.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 300" role="img" aria-label="Stack frames for scale_sum on AArch64 and x86-64, showing saved frame pointer, link register, callee-saved register and return address">
+<text class="h" x="40" y="22">AArch64 frame</text><text class="h" x="390" y="22">x86-64 frame</text>
+<text class="s" x="40" y="40">higher addresses ↑</text><text class="s" x="390" y="40">higher addresses ↑</text>
+<g transform="translate(40,50)">
+<rect class="b" x="0" y="0" width="230" height="40"/><text class="s" x="12" y="25">caller's frame</text>
+<rect class="b" x="0" y="40" width="230" height="36"/><text class="m s" x="12" y="62">padding (8)</text>
+<rect class="sg" x="0" y="76" width="230" height="36"/><text class="m s" x="12" y="98">saved x19</text><text class="m s" x="160" y="98">sp+16</text>
+<rect class="cu" x="0" y="112" width="230" height="36"/><text class="m s" x="12" y="134">saved x30 (LR)</text><text class="m s" x="160" y="134">sp+8</text>
+<rect class="cu" x="0" y="148" width="230" height="36"/><text class="m s" x="12" y="170">saved x29 (FP)</text><text class="m s" x="160" y="170">sp+0</text>
+<path class="lc" d="M240 166h30"/><text class="m s tc" x="276" y="170">sp = x29</text>
+</g>
+<g transform="translate(390,50)">
+<rect class="b" x="0" y="0" width="230" height="40"/><text class="s" x="12" y="25">caller's frame</text>
+<rect class="cu" x="0" y="40" width="230" height="36"/><text class="m s" x="12" y="62">return address</text><text class="m s" x="150" y="62">pushed by call</text>
+<rect class="sg" x="0" y="76" width="230" height="36"/><text class="m s" x="12" y="98">saved rbx</text>
+<path class="lc" d="M240 94h20"/><text class="m s tc" x="264" y="98">rsp</text>
+<rect class="b" x="0" y="112" width="230" height="72" style="stroke-dasharray:4 4"/><text class="s" x="12" y="140">red zone: 128 bytes a leaf</text><text class="s" x="12" y="158">may use without moving rsp</text>
+</g>
+<text class="s" x="40" y="262">On AArch64 the LR is saved explicitly, only by non-leaf functions.</text>
+<text class="s" x="40" y="280">On x86-64 the return address is always on the stack, placed there by call.</text>
+</svg><figcaption>Frames for <code>scale_sum</code> at <code>-O2</code>. Exact layout depends on compiler and flags; with <code>-fno-omit-frame-pointer</code> x86-64 also pushes <code>rbp</code>.</figcaption></figure>
+
+<h2 id="stack-alignment-and-why-it-crashes-things">Stack alignment, and why it crashes things</h2>
+<p>Both ABIs require 16-byte alignment, but they check it differently:</p>
+<ul>
+<li><strong>AArch64</strong> can enforce it in hardware: with stack alignment checking enabled, as it normally is, a load or store using a misaligned <code>sp</code> as the base raises an alignment fault. That is why <code>stp ... [sp, #-16]!</code> always moves in multiples of 16, even to save one register.</li>
+<li><strong>x86-64</strong> requires <code>rsp</code> to be 16-byte aligned <em>at the call instruction</em>, so on entry <code>rsp + 8</code> is aligned. Nothing traps immediately; instead, SSE instructions such as <code>movaps</code> deep inside a library fault later. A function that calls <code>printf</code> from hand-written assembly after a single <code>push</code> works, and after two pushes crashes.</li>
+</ul>
+
+<h2 id="reading-a-crash-with-this-knowledge">Reading a crash with this knowledge</h2>
+<ul>
+<li>On AArch64, if <code>pc</code> is garbage but <code>x30</code> is sane, you probably returned through a corrupted saved LR: a stack buffer overflow in the function you just left. Walk frames by following <code>x29</code>: each frame stores the previous <code>x29</code> and the saved <code>x30</code>.</li>
+<li>On x86-64, a smashed return address shows up as a <code>ret</code> to an address that looks like your data, often ASCII bytes such as <code>0x4141414141414141</code>.</li>
+<li>Arguments live in registers that the callee is free to overwrite, so in an optimized build the debugger's "value optimized out" is honest: the argument register was reused.</li>
+</ul>
+
+<h2 id="calling-c-from-assembly">Calling C from assembly</h2>
+<pre><code class="language-armasm">    .global start_app
+start_app:                       // void start_app(void) { log_value(42); }
+    stp     x29, x30, [sp, #-16]!
+    mov     x29, sp
+    mov     x0, #42              // first argument
+    bl      log_value
+    ldp     x29, x30, [sp], #16
+    ret</code></pre>
+<pre><code class="language-x86asm">    global start_app
+start_app:
+    sub     rsp, 8               ; entry rsp is 8 mod 16, realign to 16
+    mov     edi, 42              ; first argument (writing edi zero-extends rdi)
+    call    log_value
+    add     rsp, 8
+    ret</code></pre>
+<div class="note"><strong>Windows x64 is different</strong>
+<p>Microsoft's x64 convention passes the first four arguments in <code>rcx, rdx, r8, r9</code>, treats <code>rsi</code> and <code>rdi</code> as callee-saved, requires the caller to reserve 32 bytes of "shadow space" above the return address, and has no red zone. Code that moves between Linux and Windows on x86-64 must account for this.</p></div>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Learn the table, then read compiler output until the patterns are familiar: arguments in, callee-saved registers for values that live across calls, a frame only when needed, and 16-byte stack alignment everywhere.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn next" href="arm-32bit-assembly-programming.html"><small>Next in Assembly</small><span>ARM 32-bit Assembly Programming</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

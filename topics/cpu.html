@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPU internals | LowLevel Labs</title>
+<meta name="description" content="Pipelines, caches, coherence, MMUs, exception levels and multicore communication.">
+<link rel="canonical" href="https://lowlevellabs.in/topics/cpu.html">
+<meta property="og:title" content="CPU internals"><meta property="og:description" content="Pipelines, caches, coherence, MMUs, exception levels and multicore communication.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/topics/cpu.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html">Articles</a><a href="../topics/index.html" aria-current="page">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<section class="page-head"><div class="wrap">
+<div class="crumbs"><a href="index.html">Topics</a> / <span class="mono">CPU</span></div>
+<h1>CPU internals</h1><p class="lede">Pipelines, caches, coherence, MMUs, exception levels and multicore communication.</p></div></section>
+<section><div class="wrap"><ul class="toc-list"><li data-topic="cpu" data-text="inside a cpu pipeline: hazards, forwarding and branch prediction how a classic five-stage pipeline overlaps instructions, what data, control and structural hazards are, and how forwarding, stalls and branch prediction keep it busy. cpu internals"><a class="toc-row" href="../articles/cpu-pipeline-hazards.html"><span class="k">CPU internals</span><span><span class="t">Inside a CPU Pipeline: Hazards, Forwarding and Branch Prediction</span><span class="new">New</span><span class="d">How a classic five-stage pipeline overlaps instructions, what data, control and structural hazards are, and how forwarding, stalls and branch prediction keep it busy.</span></span><span class="r">10 min read</span></a></li><li data-topic="cpu" data-text="virtual memory: mmu page walks and the tlb how an mmu translates virtual addresses through multi-level page tables on aarch64 and x86-64, what the tlb caches, and what firmware and drivers must do when mappings change. cpu internals"><a class="toc-row" href="../articles/virtual-memory-mmu-tlb.html"><span class="k">CPU internals</span><span><span class="t">Virtual Memory: MMU Page Walks and the TLB</span><span class="new">New</span><span class="d">How an MMU translates virtual addresses through multi-level page tables on AArch64 and x86-64, what the TLB caches, and what firmware and drivers must do when mappings change.</span></span><span class="r">11 min read</span></a></li><li data-topic="cpu" data-text="armv7-a vs. armv8-a: understanding aarch32 and aarch64 a practical embedded-systems comparison of armv7-a and armv8-a, including aarch32, aarch64, exceptions, mmu, registers, and migration considerations. cpu internals"><a class="toc-row" href="../articles/armv7-vs-armv8-aarch64.html"><span class="k">CPU internals</span><span><span class="t">Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64</span><span class="d">A practical embedded-systems comparison of Armv7-A and Armv8-A, including AArch32, AArch64, exceptions, MMU, registers, and migration considerations.</span></span><span class="r">5 min read</span></a></li><li data-topic="cpu" data-text="dma and cache coherency, explained understand dma and cpu cache coherency in embedded systems. cpu internals"><a class="toc-row" href="../articles/dma-cache-coherency.html"><span class="k">CPU internals</span><span><span class="t">DMA and Cache Coherency, Explained</span><span class="d">Understand DMA and CPU cache coherency in embedded systems.</span></span><span class="r">3 min read</span></a></li><li data-topic="cpu" data-text="mesi cache coherence: why multicore cpus need it understand modified, exclusive, shared, and invalid states through a two-core example. cpu internals"><a class="toc-row" href="../articles/cache-coherence-mesi.html"><span class="k">CPU internals</span><span><span class="t">MESI Cache Coherence: Why Multicore CPUs Need It</span><span class="d">Understand Modified, Exclusive, Shared, and Invalid states through a two-core example.</span></span><span class="r">3 min read</span></a></li><li data-topic="cpu" data-text="smp communication: ipis, mailboxes, and shared memory compare common mechanisms for coordinating work between processor cores. cpu internals"><a class="toc-row" href="../articles/smp-interprocessor-interrupt-mailbox.html"><span class="k">CPU internals</span><span><span class="t">SMP Communication: IPIs, Mailboxes, and Shared Memory</span><span class="d">Compare common mechanisms for coordinating work between processor cores.</span></span><span class="r">3 min read</span></a></li></ul></div></section>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

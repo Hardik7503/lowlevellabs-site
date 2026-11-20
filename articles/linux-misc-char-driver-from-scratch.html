@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Writing a Linux Character Driver from Scratch | LowLevel Labs</title>
+<meta name="description" content="A complete, buildable misc character driver with read, write, locking and a Makefile, plus how to load it, test it and debug it.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/linux-misc-char-driver-from-scratch.html">
+<meta property="og:title" content="Writing a Linux Character Driver from Scratch"><meta property="og:description" content="A complete, buildable misc character driver with read, write, locking and a Makefile, plus how to load it, test it and debug it.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/linux-misc-char-driver-from-scratch.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Writing a Linux Character Driver from Scratch", "description": "A complete, buildable misc character driver with read, write, locking and a Makefile, plus how to load it, test it and debug it.", "datePublished": "2026-11-20", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/drivers.html">Linux device drivers</a></div>
+<h1>Writing a Linux Character Driver from Scratch</h1>
+<p class="lede">The fastest way to understand the Linux driver model is to build a small driver end to end. This one is about 100 lines, builds out of tree, and exposes a device file you can read and write from the shell.</p>
+<div class="byline"><span>12 min read</span><span>20 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#what-we-are-building">What we are building</a></li><li><a href="#why-a-misc-device">Why a misc device</a></li><li><a href="#the-driver">The driver</a></li><li><a href="#walking-through-the-important-lines">Walking through the important lines</a></li><li><a href="#building-out-of-tree">Building out of tree</a></li><li><a href="#loading-and-testing">Loading and testing</a></li><li><a href="#debugging-when-it-goes-wrong">Debugging when it goes wrong</a></li><li><a href="#where-to-go-next">Where to go next</a></li></ol></aside>
+<article class="prose">
+<h2 id="what-we-are-building">What we are building</h2>
+<p>A driver for a virtual device, <code>/dev/llbuf</code>, that stores up to 4 KB. Writing to it replaces the contents; reading returns them. There is no hardware, so you can run it in a VM, but the structure is exactly what a real driver uses: a module, a registered device, a <code>file_operations</code> table, safe copying across the user/kernel boundary, and a lock.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 270" role="img" aria-label="Call path from a user-space write through the system call layer and VFS to the driver's llbuf_write function">
+<rect class="b" x="20" y="16" width="640" height="54" rx="6"/><text class="h" x="36" y="38">User space</text><text class="m s" x="36" y="58">echo hello &gt; /dev/llbuf     →  open(), write(fd, buf, 6), close()</text>
+<path class="ln dash" d="M20 84h640"/><text class="s" x="560" y="98">syscall boundary</text>
+<rect class="sg" x="20" y="108" width="300" height="50" rx="6"/><text class="h" x="36" y="130">VFS</text><text class="s" x="36" y="148">finds the inode for char device 10:minor</text>
+<rect class="b" x="360" y="108" width="300" height="50" rx="6"/><text class="h" x="376" y="130">misc core</text><text class="s" x="376" y="148">maps the minor to our struct miscdevice</text>
+<path class="ln" d="M320 133h40"/>
+<rect class="cu" x="20" y="180" width="640" height="70" rx="6"/><text class="h" x="36" y="204">llbuf driver</text>
+<text class="m s" x="36" y="226">llbuf_fops.write = llbuf_write  →  copy_from_user() into kernel buffer under mutex</text>
+<path class="ln" d="M170 158v22M510 158v22"/>
+</svg><figcaption>A <code>write()</code> on the device file reaches the driver through the VFS, which uses the device number to find the driver's <code>file_operations</code>.</figcaption></figure>
+
+<h2 id="why-a-misc-device">Why a misc device</h2>
+<p>A classic character driver allocates a major/minor range with <code>alloc_chrdev_region()</code>, initializes a <code>struct cdev</code>, creates a class and calls <code>device_create()</code> so udev makes the <code>/dev</code> node. The <strong>misc</strong> framework does all of that in one call, using the shared major number 10 and a dynamic minor. For a single device node it is the right default.</p>
+
+<h2 id="the-driver">The driver</h2>
+<pre><code class="language-c">// SPDX-License-Identifier: GPL-2.0
+#include &lt;linux/module.h&gt;
+#include &lt;linux/miscdevice.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/uaccess.h&gt;
+
+#define LLBUF_SIZE 4096
+
+static char   llbuf_data[LLBUF_SIZE];
+static size_t llbuf_len;                 /* bytes currently stored          */
+static DEFINE_MUTEX(llbuf_lock);         /* protects llbuf_data and _len    */
+
+static ssize_t llbuf_read(struct file *f, char __user *ubuf,
+                          size_t count, loff_t *ppos)
+{
+    ssize_t ret;
+
+    if (mutex_lock_interruptible(&amp;llbuf_lock))
+        return -ERESTARTSYS;
+    /* Copies min(count, len - *ppos) bytes, advances *ppos, returns 0 at EOF. */
+    ret = simple_read_from_buffer(ubuf, count, ppos, llbuf_data, llbuf_len);
+    mutex_unlock(&amp;llbuf_lock);
+    return ret;
+}
+
+static ssize_t llbuf_write(struct file *f, const char __user *ubuf,
+                           size_t count, loff_t *ppos)
+{
+    if (count &gt; LLBUF_SIZE)
+        return -EFBIG;
+
+    if (mutex_lock_interruptible(&amp;llbuf_lock))
+        return -ERESTARTSYS;
+    if (copy_from_user(llbuf_data, ubuf, count)) {
+        mutex_unlock(&amp;llbuf_lock);
+        return -EFAULT;
+    }
+    llbuf_len = count;
+    mutex_unlock(&amp;llbuf_lock);
+
+    *ppos += count;
+    return count;
+}
+
+static const struct file_operations llbuf_fops = {
+    .owner  = THIS_MODULE,
+    .read   = llbuf_read,
+    .write  = llbuf_write,
+    .llseek = default_llseek,
+};
+
+static struct miscdevice llbuf_dev = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name  = "llbuf",                    /* creates /dev/llbuf */
+    .fops  = &amp;llbuf_fops,
+    .mode  = 0666,                       /* demo only: world read/write */
+};
+
+static int __init llbuf_init(void)
+{
+    int ret = misc_register(&amp;llbuf_dev);
+
+    if (ret)
+        return ret;
+    pr_info("llbuf: registered /dev/%s, minor %d\n", llbuf_dev.name, llbuf_dev.minor);
+    return 0;
+}
+
+static void __exit llbuf_exit(void)
+{
+    misc_deregister(&amp;llbuf_dev);
+    pr_info("llbuf: unregistered\n");
+}
+
+module_init(llbuf_init);
+module_exit(llbuf_exit);
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("LowLevel Labs");
+MODULE_DESCRIPTION("Minimal misc character device example");</code></pre>
+<h2 id="walking-through-the-important-lines">Walking through the important lines</h2>
+<h3>The __user pointers</h3>
+<p><code>ubuf</code> is an address in the calling process's address space. The kernel must never dereference it directly: it may be unmapped, swapped out or deliberately point into kernel memory. <code>copy_from_user()</code> and <code>copy_to_user()</code> validate the range, handle page faults safely and return the number of bytes they could <em>not</em> copy. Any non-zero result means <code>-EFAULT</code>. The <code>__user</code> annotation lets the <code>sparse</code> checker catch direct dereferences.</p>
+<h3>The file position</h3>
+<p><code>*ppos</code> is the per-open file offset. <code>cat</code> keeps calling <code>read()</code> until it returns 0, so a read that ignores <code>*ppos</code> and always returns data makes <code>cat</code> loop forever, which is the most common first-driver bug. <code>simple_read_from_buffer()</code> handles the offset and end-of-file for you.</p>
+<h3>The lock</h3>
+<p>Two processes can call <code>write()</code> at the same time on different CPUs. Without the mutex, one could be copying into <code>llbuf_data</code> while the other updates <code>llbuf_len</code>, and a reader could see a mix of both. A mutex is the right lock here because both paths run in process context and <code>copy_from_user()</code> may sleep on a page fault; a spinlock would be a bug. See <a href="linux-kernel-locking-spinlock-mutex.html">Spinlocks vs Mutexes</a> for the rules.</p>
+<p><code>mutex_lock_interruptible()</code> lets a user kill a process that is waiting for the lock. Returning <code>-ERESTARTSYS</code> tells the kernel to restart or abort the system call as appropriate.</p>
+<h3>Return values</h3>
+<p>Kernel functions return negative <code>errno</code> values on failure. The C library turns <code>-EFBIG</code> into a return of -1 with <code>errno = EFBIG</code>, so the shell prints "File too large".</p>
+
+<h2 id="building-out-of-tree">Building out of tree</h2>
+<pre><code class="language-makefile">obj-m := llbuf.o
+
+KDIR ?= /lib/modules/$(shell uname -r)/build
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+<p>You need the headers for your running kernel (<code>linux-headers-$(uname -r)</code> on Debian and Ubuntu). For an embedded board, point <code>KDIR</code> at the board's kernel build tree and add <code>ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-</code>. Recipe lines in a Makefile must start with a tab.</p>
+
+<h2 id="loading-and-testing">Loading and testing</h2>
+<pre><code class="language-bash">make
+sudo insmod llbuf.ko
+sudo dmesg | tail -n 2          # llbuf: registered /dev/llbuf, minor 123
+ls -l /dev/llbuf                # crw-rw-rw- 1 root root 10, 123 ...
+
+echo "hello from user space" &gt; /dev/llbuf
+cat /dev/llbuf                  # hello from user space
+head -c 5000 /dev/zero &gt; /dev/llbuf   # -&gt; File too large
+
+sudo rmmod llbuf</code></pre>
+<div class="note"><strong>Secure Boot</strong>
+<p>On a distribution kernel with Secure Boot enabled, <code>insmod</code> may refuse an unsigned module with "Key was rejected by service". Test in a VM without Secure Boot, or sign the module with a key enrolled through MOK.</p></div>
+
+<h2 id="debugging-when-it-goes-wrong">Debugging when it goes wrong</h2>
+<ul>
+<li><strong>Read <code>dmesg</code> first.</strong> An oops prints the faulting function and offset, for example <code>llbuf_write+0x4c/0xb0</code>. Turn that into a source line with <code>scripts/faddr2line llbuf.ko llbuf_write+0x4c</code>.</li>
+<li><strong>Enable the debugging options</strong> on a test kernel: <code>CONFIG_PROVE_LOCKING</code> (lockdep), <code>CONFIG_DEBUG_ATOMIC_SLEEP</code> and <code>CONFIG_KASAN</code> catch most locking and memory bugs the first time they happen instead of the hundredth.</li>
+<li><strong>Use <code>strace</code></strong> on the user side to see exactly which system calls hit your driver and what they returned.</li>
+<li><strong>Prefer <code>dev_dbg()</code> and dynamic debug</strong> over sprinkling <code>printk</code>: messages can be switched on at runtime through <code>/sys/kernel/debug/dynamic_debug/control</code>.</li>
+</ul>
+
+<h2 id="where-to-go-next">Where to go next</h2>
+<ul>
+<li>Add an <code>unlocked_ioctl</code> handler, following <a href="ioctl-abi-design.html">Designing a Robust ioctl Interface</a>.</li>
+<li>Add <code>poll</code> support with a wait queue, so readers can block until new data is written.</li>
+<li>Turn it into a platform driver that binds to a Device Tree node and maps a real register block in <code>probe()</code>; see <a href="linux-driver-probe.html">What Happens When a Linux Driver Probes?</a></li>
+</ul>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn next" href="ioctl-abi-design.html"><small>Next in Linux device drivers</small><span>Designing a Robust ioctl Interface</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

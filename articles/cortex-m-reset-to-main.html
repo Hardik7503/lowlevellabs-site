@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From Reset to main() on an ARM Cortex-M | LowLevel Labs</title>
+<meta name="description" content="The vector table, the linker script, copying .data, zeroing .bss and everything else that runs before your first line of C on a Cortex-M microcontroller.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/cortex-m-reset-to-main.html">
+<meta property="og:title" content="From Reset to main() on an ARM Cortex-M"><meta property="og:description" content="The vector table, the linker script, copying .data, zeroing .bss and everything else that runs before your first line of C on a Cortex-M microcontroller.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/cortex-m-reset-to-main.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "From Reset to main() on an ARM Cortex-M", "description": "The vector table, the linker script, copying .data, zeroing .bss and everything else that runs before your first line of C on a Cortex-M microcontroller.", "datePublished": "2026-11-20", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/firmware.html">Embedded firmware</a></div>
+<h1>From Reset to main() on an ARM Cortex-M</h1>
+<p class="lede">Your firmware's <code>main()</code> is not the first code that runs. Between power-on and <code>main()</code>, the hardware and about forty lines of startup code build the environment C assumes exists.</p>
+<div class="byline"><span>11 min read</span><span>20 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#what-c-needs-before-it-can-run">What C needs before it can run</a></li><li><a href="#step-1-the-hardware-reads-the-vector-table">Step 1: the hardware reads the vector table</a></li><li><a href="#step-2-the-linker-script-decides-where-everything-lives">Step 2: the linker script decides where everything lives</a></li><li><a href="#step-3-the-reset-handler">Step 3: the reset handler</a></li><li><a href="#debugging-a-board-that-never-reaches-main">Debugging a board that never reaches main()</a></li></ol></aside>
+<article class="prose">
+<h2 id="what-c-needs-before-it-can-run">What C needs before it can run</h2>
+<p>A C program quietly assumes several things are already true when <code>main()</code> starts:</p>
+<ul>
+<li>There is a <strong>stack</strong>, and the stack pointer points at it.</li>
+<li>Initialized globals such as <code>int baud = 115200;</code> hold their initial values. On a microcontroller those values are stored in flash, but the variables live in RAM.</li>
+<li>Uninitialized globals and statics (<code>.bss</code>) are <strong>zero</strong>. RAM contents at power-on are undefined.</li>
+<li>For C++ or <code>__attribute__((constructor))</code>, static constructors have run.</li>
+</ul>
+<p>On a desktop the OS loader and the C runtime do this. On bare metal, nobody does it unless your startup code does.</p>
+
+<h2 id="step-1-the-hardware-reads-the-vector-table">Step 1: the hardware reads the vector table</h2>
+<p>On reset, a Cortex-M core does not start executing at address 0. It <strong>reads two words</strong> from the vector table, which is at address <code>0x0000_0000</code> by default (many parts alias flash there, and cores with VTOR let software move the table later):</p>
+<ol>
+<li>Word 0 is loaded into the main stack pointer (<code>MSP</code>).</li>
+<li>Word 1 is the address of the reset handler. The core loads it into <code>PC</code> and starts executing there.</li>
+</ol>
+<p>Because the hardware sets up the stack pointer itself, the reset handler can be written in C. That is unusual: most other architectures need at least a few assembly instructions first.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 270" role="img" aria-label="Cortex-M vector table in flash with initial stack pointer and reset handler entries, and the CPU loading MSP and PC from them">
+<text class="m s" x="20" y="22">flash @ 0x0800_0000 (aliased at 0x0)</text>
+<g transform="translate(20,32)">
+<rect class="cu" x="0" y="0" width="290" height="32"/><text class="m" x="10" y="21">+0x00  _estack</text><text class="s" x="200" y="21">initial SP</text>
+<rect class="cu" x="0" y="32" width="290" height="32"/><text class="m" x="10" y="53">+0x04  Reset_Handler | 1</text>
+<rect class="b" x="0" y="64" width="290" height="32"/><text class="m" x="10" y="85">+0x08  NMI_Handler</text>
+<rect class="b" x="0" y="96" width="290" height="32"/><text class="m" x="10" y="117">+0x0C  HardFault_Handler</text>
+<rect class="b" x="0" y="128" width="290" height="32"/><text class="m" x="10" y="149">  ...  system exceptions</text>
+<rect class="sg" x="0" y="160" width="290" height="32"/><text class="m" x="10" y="181">+0x40  IRQ0 (vendor)</text>
+<rect class="b" x="0" y="192" width="290" height="32"/><text class="m" x="10" y="213">  ...  IRQ1..n</text>
+</g>
+<rect class="ink" x="470" y="40" width="180" height="100" rx="6"/><text class="h" x="530" y="66">Cortex-M</text>
+<text class="m s" x="490" y="96">MSP ← word 0</text><text class="m s" x="490" y="120">PC  ← word 1</text>
+<path class="lc" d="M310 48h80v40h80M310 80h60v34h100"/>
+<text class="s" x="330" y="170">The low bit of the handler</text><text class="s" x="330" y="188">address must be 1: Cortex-M</text><text class="s" x="330" y="206">only executes Thumb code.</text>
+</svg><figcaption>The first two vector-table entries are consumed by hardware on reset. Every other entry is an exception or interrupt handler address.</figcaption></figure>
+
+<h2 id="step-2-the-linker-script-decides-where-everything-lives">Step 2: the linker script decides where everything lives</h2>
+<p>The linker script describes the memory map and where each output section goes. The key idea is that <code>.data</code> has two addresses: a <strong>load address</strong> in flash (LMA), where the initial values are stored in the image, and a <strong>run address</strong> in RAM (VMA), where the code expects the variables to be.</p>
+<pre><code class="language-ld">MEMORY
+{
+  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 256K
+  RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 64K
+}
+
+_estack = ORIGIN(RAM) + LENGTH(RAM);   /* stack grows down from top of RAM */
+
+SECTIONS
+{
+  .isr_vector : { KEEP(*(.isr_vector)) } &gt; FLASH
+  .text       : { *(.text*) *(.rodata*) } &gt; FLASH
+
+  _sidata = LOADADDR(.data);            /* where initial values sit in flash */
+  .data : {
+    _sdata = .;  *(.data*)  _edata = .;
+  } &gt; RAM AT &gt; FLASH                    /* run in RAM, load from flash */
+
+  .bss (NOLOAD) : {
+    _sbss = .;   *(.bss*) *(COMMON)  _ebss = .;
+  } &gt; RAM
+}</code></pre>
+<p><code>KEEP</code> stops <code>--gc-sections</code> from discarding the vector table: nothing in the program references it, only the hardware does. <code>.bss</code> takes no space in the image at all, because its contents are known to be zero.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 260" role="img" aria-label="Flash and RAM side by side, showing .data initial values copied from flash to RAM and .bss zeroed in RAM">
+<text class="h" x="40" y="22">Flash (image)</text><text class="h" x="430" y="22">RAM (at runtime)</text>
+<g transform="translate(40,32)">
+<rect class="cu" x="0" y="0" width="200" height="34"/><text class="m s" x="12" y="22">.isr_vector</text>
+<rect class="sg" x="0" y="34" width="200" height="70"/><text class="m s" x="12" y="72">.text  .rodata</text>
+<rect class="wn" x="0" y="104" width="200" height="40"/><text class="m s" x="12" y="128">.data init values</text>
+<text class="m s" x="210" y="128">_sidata</text>
+</g>
+<g transform="translate(430,32)">
+<rect class="wn" x="0" y="0" width="200" height="40"/><text class="m s" x="12" y="24">.data</text><text class="m s" x="-64" y="12">_sdata</text>
+<rect class="b" x="0" y="40" width="200" height="40"/><text class="m s" x="12" y="64">.bss  (zeroed)</text><text class="m s" x="-56" y="52">_sbss</text>
+<rect class="b" x="0" y="80" width="200" height="60" style="stroke-dasharray:4 4"/><text class="m s" x="12" y="114">heap ↓ … ↑</text>
+<rect class="cu" x="0" y="140" width="200" height="50"/><text class="m s" x="12" y="170">stack  (grows down)</text><text class="m s" x="-66" y="196">_estack</text>
+</g>
+<path class="lc" d="M240 156C330 156 330 52 430 52"/><text class="s tc" x="268" y="210">Reset_Handler copies</text><text class="s tc" x="268" y="228">_sidata → _sdata.._edata</text>
+</svg><figcaption>The startup code's two memory jobs: copy <code>.data</code> from its load address in flash to its run address in RAM, and zero <code>.bss</code>.</figcaption></figure>
+
+<h2 id="step-3-the-reset-handler">Step 3: the reset handler</h2>
+<pre><code class="language-c">#include &lt;stdint.h&gt;
+
+extern uint32_t _sidata, _sdata, _edata, _sbss, _ebss, _estack;
+extern int  main(void);
+extern void SystemInit(void);          /* clocks, flash wait states, FPU */
+extern void __libc_init_array(void);   /* newlib: static constructors     */
+
+void Reset_Handler(void)
+{
+    /* 1. Copy initialized data from flash to RAM. */
+    uint32_t *src = &amp;_sidata;
+    for (uint32_t *dst = &amp;_sdata; dst &lt; &amp;_edata; )
+        *dst++ = *src++;
+
+    /* 2. Zero .bss. */
+    for (uint32_t *dst = &amp;_sbss; dst &lt; &amp;_ebss; )
+        *dst++ = 0;
+
+    /* 3. Clock tree, PLL, flash latency, enable FPU if present. */
+    SystemInit();
+
+    /* 4. C++ constructors and constructor attributes. */
+    __libc_init_array();
+
+    main();
+    for (;;) { }                       /* main should never return */
+}</code></pre>
+<p>The linker symbols are declared as <code>uint32_t</code> objects only so we can take their addresses. Their "value" is meaningless; <code>&amp;_sdata</code> is the address the linker assigned. Word-sized copies work because the linker script aligns these sections to 4 bytes (add <code>. = ALIGN(4);</code> around them if your script does not).</p>
+<div class="pitfall"><strong>Pitfall: SystemInit and .data</strong>
+<p>Some vendor startup files call <code>SystemInit()</code> <em>before</em> copying <code>.data</code>, so it runs early at the reset clock speed. Any global it reads at that point still holds garbage. If <code>SystemCoreClock</code> is wrong after boot, check the order.</p></div>
+<h3>The vector table in C</h3>
+<pre><code class="language-c">void Default_Handler(void) { for (;;) { } }
+void NMI_Handler(void)       __attribute__((weak, alias("Default_Handler")));
+void HardFault_Handler(void) __attribute__((weak, alias("Default_Handler")));
+void SysTick_Handler(void)   __attribute__((weak, alias("Default_Handler")));
+
+__attribute__((section(".isr_vector"), used))
+const void *const vector_table[] = {
+    &amp;_estack,
+    Reset_Handler,
+    NMI_Handler,
+    HardFault_Handler,
+    /* ... MemManage, BusFault, UsageFault, reserved, SVCall, PendSV ... */
+    [15] = SysTick_Handler,
+    /* [16 + n] = IRQn handlers from the vendor's table */
+};</code></pre>
+<p>Weak aliases are why you can define <code>void USART1_IRQHandler(void)</code> anywhere in your project and it is automatically used: your strong definition overrides the weak default. Misspell the name and you silently get <code>Default_Handler</code>, which is a common reason an interrupt "hangs the board".</p>
+
+<h2 id="debugging-a-board-that-never-reaches-main">Debugging a board that never reaches main()</h2>
+<ul>
+<li><strong>Check the first two words of the image.</strong> <code>arm-none-eabi-objdump -s -j .isr_vector fw.elf</code>. Word 0 should be the top of RAM, word 1 an odd address inside flash.</li>
+<li><strong>Check the map file.</strong> Link with <code>-Wl,-Map=fw.map</code> and confirm <code>.data</code> has a RAM VMA and a flash LMA.</li>
+<li><strong>Halt at reset.</strong> In GDB with OpenOCD or a J-Link: <code>monitor reset halt</code>, then <code>info registers sp pc</code>. If SP or PC are not what the table says, the table is not where the core is looking (boot pins, VTOR, wrong flash offset).</li>
+<li><strong>A HardFault before main()</strong> usually means a stack placed outside RAM, a missing Thumb bit, or <code>SystemInit()</code> touching a peripheral whose clock is not enabled.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Reset on a Cortex-M is: hardware loads SP and PC from the vector table, then your reset handler copies <code>.data</code>, zeroes <code>.bss</code>, configures clocks, runs constructors and calls <code>main()</code>. The linker script is the contract between those steps. Read it as carefully as the code.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn next" href="interrupts-polling-dma.html"><small>Next in Embedded firmware</small><span>Interrupts vs. Polling vs. DMA</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

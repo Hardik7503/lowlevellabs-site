@@ -1,29 +1,41 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A practical embedded-systems comparison of Armv7-A and Armv8-A, including AArch32, AArch64, exceptions, MMU, registers, and migration considerations.">
-  <title>Armv7-A vs Armv8-A (AArch64) — LowLevel Labs</title>
-  <link rel="stylesheet" href="../styles.css">
-  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64 | LowLevel Labs</title>
+<meta name="description" content="A practical embedded-systems comparison of Armv7-A and Armv8-A, including AArch32, AArch64, exceptions, MMU, registers, and migration considerations.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/armv7-vs-armv8-aarch64.html">
+<meta property="og:title" content="Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64"><meta property="og:description" content="A practical embedded-systems comparison of Armv7-A and Armv8-A, including AArch32, AArch64, exceptions, MMU, registers, and migration considerations.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/armv7-vs-armv8-aarch64.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64", "description": "A practical embedded-systems comparison of Armv7-A and Armv8-A, including AArch32, AArch64, exceptions, MMU, registers, and migration considerations.", "datePublished": "2026-10-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
 </head>
 <body>
-<header class="site-header"><div class="container nav-wrap">
-  <a class="brand" href="../" aria-label="LowLevel Labs home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a>
-  <nav class="nav-links" aria-label="Main navigation"><a href="../#articles">Articles</a><a href="../#topics">Topics</a><a href="../#about">About</a></nav>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
 </div></header>
-<main class="container section article-page">
-  <a class="read-link" href="../#articles">← Back to articles</a>
-  <div class="eyebrow" style="margin-top:28px">PROCESSOR ARCHITECTURE · PRACTICAL GUIDE</div>
-  <h1 style="font-size:clamp(36px,5vw,58px);max-width:900px">Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64</h1>
-  <p class="hero-copy">The important shift is not simply 32-bit to 64-bit. Armv8-A introduces a new execution state, a different exception model, a larger register set, and architectural changes that affect boot code, kernels, and low-level debugging.</p>
-  <div class="article-content">
-    <h2>First, understand the names</h2>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/cpu.html">CPU internals</a></div>
+<h1>Armv7-A vs. Armv8-A: Understanding AArch32 and AArch64</h1>
+<p class="lede">The important shift is not simply 32-bit to 64-bit. Armv8-A introduces a new execution state, a different exception model, a larger register set, and architectural changes that affect boot code, kernels, and low-level debugging.</p>
+<div class="byline"><span>5 min read</span><span>22 Oct 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#first-understand-the-names">First, understand the names</a></li><li><a href="#at-a-glance-comparison">At-a-glance comparison</a></li><li><a href="#registers-r0-r15-versus-x0-x30">Registers: R0–R15 versus X0–X30</a></li><li><a href="#instruction-set-differences">Instruction-set differences</a></li><li><a href="#exception-handling-processor-modes-vs-exception-levels">Exception handling: processor modes vs. exception levels</a></li><li><a href="#mmu-and-address-translation">MMU and address translation</a></li><li><a href="#boot-and-firmware-implications">Boot and firmware implications</a></li><li><a href="#what-changes-when-porting-low-level-code">What changes when porting low-level code?</a></li><li><a href="#practical-debugging-checklist">Practical debugging checklist</a></li><li><a href="#key-takeaway">Key takeaway</a></li></ol></aside>
+<article class="prose">
+<h2 id="first-understand-the-names">First, understand the names</h2>
     <p><strong>Armv7-A</strong> is an application-profile architecture generation commonly associated with 32-bit AArch32 execution. <strong>Armv8-A</strong> introduced AArch64, a 64-bit execution state, while also supporting AArch32 in many implementations. Support for AArch32 is optional in some later Armv8-A and newer implementations, so always check the specific CPU.</p>
     <p><strong>AArch32 and AArch64 are execution states</strong>, not processor models. A CPU implementing Armv8-A may run AArch64 software and, where implemented, AArch32 software. An operating system's supported state also depends on firmware, boot configuration, and the software image.</p>
 
-    <h2>At-a-glance comparison</h2>
+    <h2 id="at-a-glance-comparison">At-a-glance comparison</h2>
     <table>
       <thead><tr><th>Area</th><th>Armv7-A / AArch32</th><th>Armv8-A / AArch64</th></tr></thead>
       <tbody>
@@ -37,25 +49,25 @@
       </tbody>
     </table>
 
-    <h2>Registers: R0–R15 versus X0–X30</h2>
+    <h2 id="registers-r0-r15-versus-x0-x30">Registers: R0–R15 versus X0–X30</h2>
     <p>In AArch32, general-purpose registers are conventionally named <code>R0</code> through <code>R15</code>. The roles of registers such as the stack pointer, link register, and program counter are tied to the AArch32 programmer's model, and exception modes can provide banked registers.</p>
     <p>In AArch64, the general-purpose registers are <code>X0</code>–<code>X30</code>. Their 32-bit views are named <code>W0</code>–<code>W30</code>; writing a W register zero-extends the result into its corresponding X register. <code>X30</code> is commonly used as the link register, and <code>SP</code> names the active stack pointer in contexts where it is valid.</p>
     <p>AArch64 does not expose the program counter as an ordinary general-purpose register. Control flow is handled by branches, and the current instruction address can be obtained using PC-relative addressing patterns such as <code>ADR</code> and <code>ADRP</code>.</p>
 
-    <h2>Instruction-set differences</h2>
+    <h2 id="instruction-set-differences">Instruction-set differences</h2>
     <p>AArch32 includes the A32 instruction set and may include Thumb, depending on the implementation. AArch64 uses the A64 instruction set, with fixed-width 32-bit instruction encodings. A64 is not just A32 with wider registers: instruction encodings, calling conventions, addressing forms, and system-register access differ.</p>
     <p>For example, AArch64 commonly uses <code>STP</code> and <code>LDP</code> to store and load register pairs, often for function prologues and epilogues. Code ported from AArch32 should be rebuilt and reviewed for the AArch64 ABI rather than mechanically changing register names.</p>
 
-    <h2>Exception handling: processor modes vs. exception levels</h2>
+    <h2 id="exception-handling-processor-modes-vs-exception-levels">Exception handling: processor modes vs. exception levels</h2>
     <p>AArch32 traditionally describes privileged execution using modes such as User, Supervisor, IRQ, FIQ, Abort, Undefined, and System, with banked registers for selected modes. Exception vectors and the relevant status registers help the handler identify and restore the interrupted context.</p>
     <p>AArch64 organizes privilege into exception levels: <strong>EL0</strong> is typically applications, <strong>EL1</strong> an operating-system kernel, <strong>EL2</strong> a hypervisor, and <strong>EL3</strong> secure monitor or firmware. Not every platform uses every level, and the security architecture and software configuration determine the actual transitions.</p>
     <p>On exception entry, the processor records return state in exception-related registers such as <code>ELR_ELx</code> and <code>SPSR_ELx</code>, then branches through a vector table selected for the target exception level and the origin context. A handler returns using an exception-return instruction such as <code>ERET</code>.</p>
 
-    <h2>MMU and address translation</h2>
+    <h2 id="mmu-and-address-translation">MMU and address translation</h2>
     <p>Both architecture generations can use an MMU to translate virtual addresses to physical addresses and enforce access permissions. The formats and control registers differ between AArch32 and AArch64, so early boot code must configure translation tables and control registers according to the current execution state.</p>
     <p>In AArch64, <code>TTBR0_EL1</code> and <code>TTBR1_EL1</code> commonly point to translation tables for different virtual-address regions, while <code>TCR_EL1</code> configures translation properties and <code>MAIR_EL1</code> defines memory attributes. The exact arrangement depends on the operating system and platform. A larger register width does not mean every CPU supports the full 64-bit virtual address space.</p>
 
-    <h2>Boot and firmware implications</h2>
+    <h2 id="boot-and-firmware-implications">Boot and firmware implications</h2>
     <ul>
       <li><strong>Reset and initial execution:</strong> the reset state and entry point are defined by the processor and platform. Firmware must establish a valid execution environment before transferring control.</li>
       <li><strong>Execution-state transition:</strong> a boot chain may start in one supported state and transition to another, but the exact path depends on the CPU, security configuration, and firmware design.</li>
@@ -64,7 +76,7 @@
       <li><strong>Device tree and kernel image:</strong> the bootloader must provide the correct kernel image, device tree, and boot arguments for the target platform and OS build.</li>
     </ul>
 
-    <h2>What changes when porting low-level code?</h2>
+    <h2 id="what-changes-when-porting-low-level-code">What changes when porting low-level code?</h2>
     <ul>
       <li>Review pointer sizes, integer assumptions, structure layout, and code that stores addresses in 32-bit variables.</li>
       <li>Use the correct compiler target and ABI; do not mix objects built for AArch32 and AArch64 in the same ordinary process.</li>
@@ -74,7 +86,7 @@
       <li>Check whether required features are implemented by the specific core instead of assuming all Armv8-A CPUs are identical.</li>
     </ul>
 
-    <h2>Practical debugging checklist</h2>
+    <h2 id="practical-debugging-checklist">Practical debugging checklist</h2>
     <ul>
       <li>Identify the exact core and architecture revision from the processor documentation.</li>
       <li>Confirm whether the binary is AArch32 or AArch64 using your toolchain's file and ELF inspection tools.</li>
@@ -83,15 +95,20 @@
       <li>When an exception occurs, capture the fault address and syndrome registers where applicable, plus the saved return address and processor state.</li>
     </ul>
 
-    <h2>Key takeaway</h2>
+    <h2 id="key-takeaway">Key takeaway</h2>
     <p>Armv7-A is strongly associated with 32-bit AArch32 systems, while Armv8-A introduced AArch64 and a substantially revised execution and exception model. For firmware and kernel engineers, the most important differences are the execution state, register and ABI model, exception handling, system-register interface, and MMU setup—not just the size of an address or register.</p>
-    <p class="content-note">This article is an architectural overview. Exact features vary by core and architecture revision; use the Arm Architecture Reference Manual and the technical reference manual for the specific processor when implementing boot or exception code.</p>
-  </div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="virtual-memory-mmu-tlb.html"><small>Previous in CPU internals</small><span>Virtual Memory: MMU Page Walks and the TLB</span></a><a class="pn next" href="dma-cache-coherency.html"><small>Next in CPU internals</small><span>DMA and Cache Coherency, Explained</span></a></nav>
+</article></div>
 </main>
-<footer class="site-footer"><div class="container footer-inner">
-  <a class="brand footer-brand" href="../"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a>
-  <p>Understand systems from hardware to software.</p><div class="footer-links"><a href="../#articles">Articles</a><a href="../#about">About</a></div><small class="copyright">© LowLevel Labs</small>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
 </div></footer>
-<!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script><!-- End Cloudflare Web Analytics -->
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
 </body>
 </html>

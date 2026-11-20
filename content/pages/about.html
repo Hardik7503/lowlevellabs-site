@@ -1,0 +1,20 @@
+<!--meta
+title: About LowLevel Labs
+description: LowLevel Labs is a technical journal about embedded firmware, Linux device drivers, C, assembly, CPU internals and RTOS.
+date: 2026-11-20
+lede: A technical journal for engineers who want to know what actually happens between the register and the API.
+-->
+<h2>Why this site exists</h2>
+<p>Most documentation tells you which function to call. LowLevel Labs explains what that call does underneath: which bus transaction it starts, which cache line it touches, which context it runs in, and what breaks when you get it wrong.</p>
+<p>Every article aims for three things: a clear mental model, a diagram that makes the model visible, and code or commands you can try on real hardware or an emulator.</p>
+<h2>What's covered</h2>
+<ul>
+<li><strong>Embedded firmware</strong>: startup code, linker scripts, interrupts, peripherals and bring-up.</li>
+<li><strong>Linux device drivers</strong>: the driver model, Device Tree, character devices, ioctl and locking.</li>
+<li><strong>C and assembly</strong>: the parts of the language that touch hardware, ARM and x86-64 calling conventions.</li>
+<li><strong>CPU internals</strong>: pipelines, caches, coherence, virtual memory and multicore communication.</li>
+<li><strong>RTOS and VxWorks</strong>: scheduling, synchronization, priority inversion and VxWorks architecture.</li>
+<li><strong>Boot and platform</strong>: BIOS, UEFI, partition tables and the path from reset to the kernel.</li>
+</ul>
+<h2>A note on accuracy</h2>
+<p>Low-level behaviour depends on the exact core, SoC, kernel version and toolchain. Articles say where behaviour is implementation-defined, and the reference manual for your part always wins. If you spot an error, please <a href="contact.html">get in touch</a> so it can be fixed.</p>

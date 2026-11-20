@@ -1,21 +1,52 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="A space for engineering projects and experiments from LowLevel Labs.">
-<title>Engineering Projects — LowLevel Labs</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guides and exercises | LowLevel Labs</title>
+<meta name="description" content="Downloadable PDF study guides and hands-on exercises on ARM and x86-64 assembly, D-Bus and GDBus.">
+<link rel="canonical" href="https://lowlevellabs.in/projects.html">
+<meta property="og:title" content="Guides and exercises"><meta property="og:description" content="Downloadable PDF study guides and hands-on exercises on ARM and x86-64 assembly, D-Bus and GDBus.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/projects.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css?v=20261022-premium-lab">
-<script defer src="script.js"></script>
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=20261120">
+
 </head>
 <body>
-<header class="site-header"><div class="container nav-wrap">
-<a class="brand" href="index.html" aria-label="LowLevel Labs home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a>
-<button class="menu-toggle" id="menuToggle" aria-label="Open navigation" aria-expanded="false">☰</button>
-<nav class="nav-links" id="navLinks" aria-label="Main navigation"><a href="index.html">Home</a><a href="articles.html">Articles</a><a href="projects.html" class="current">Projects</a><a href="about.html">About</a><a href="contact.html">Contact</a></nav>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="articles.html">Articles</a><a href="topics/index.html">Topics</a><a href="projects.html" aria-current="page">Guides</a><a href="about.html">About</a><a href="contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
 </div></header>
-<main id="main" class="container section"><div class="eyebrow">ENGINEERING PROJECTS</div><h1>Engineering Projects</h1><p class="hero-copy">Explore technical projects and learning resources. More sections will be added over time.</p><div class="article-grid"><article class="article-card"><a class="article-visual visual-board" href="articles/arm-assembly.html" aria-label="Open ARM Assembly project"><span class="board-graphic"><i></i><i></i><i></i><b>ARM</b></span><span class="visual-caption">AARCH32 · ASSEMBLY</span></a><div class="article-body"><div class="article-meta"><span>PROCESSOR ARCHITECTURE</span><span>STUDY RESOURCE</span></div><h3><a href="articles/arm-assembly.html">ARM Assembly</a></h3><p>32-bit ARM assembly exercises with corrected solutions, plus the ARM assembly programming PDF guide.</p><a class="read-link" href="articles/arm-assembly.html">Explore ARM Assembly ↗</a></div></article><article class="article-card"><a class="article-visual visual-board" href="articles/x86-64-assembly-programming.html" aria-label="Open x86-64 Assembly Programming guide"><span class="board-graphic"><i></i><i></i><i></i><b>x86</b></span><span class="visual-caption">X86-64 · NASM · GAS</span></a><div class="article-body"><div class="article-meta"><span>PROCESSOR ARCHITECTURE</span><span>PDF STUDY GUIDE</span></div><h3><a href="articles/x86-64-assembly-programming.html">x86-64 Assembly Programming</a></h3><p>Practical 64-bit x86 assembly guide with NASM and GNU assembler (GAS), available to read online or download.</p><a class="read-link" href="articles/x86-64-assembly-programming.html">Explore x86-64 Assembly ↗</a></div></article><article class="article-card"><a class="article-visual visual-board" href="articles/linux-dbus-architecture-engineering-guide.html" aria-label="Open Linux D-Bus Architecture Engineering Guide"><span class="board-graphic"><i></i><i></i><i></i><b>D-Bus</b></span><span class="visual-caption">LINUX · IPC · D-BUS</span></a><div class="article-body"><div class="article-meta"><span>LINUX SYSTEMS</span><span>PDF ENGINEERING GUIDE</span></div><h3><a href="articles/linux-dbus-architecture-engineering-guide.html">Linux D-Bus Architecture Engineering Guide</a></h3><p>Explore D-Bus architecture and message-based inter-process communication in Linux, with the engineering guide available to read online or download.</p><a class="read-link" href="articles/linux-dbus-architecture-engineering-guide.html">Explore D-Bus Guide ↗</a></div></article><article class="article-card"><a class="article-visual visual-board" href="articles/gdbus-architecture-programming-guide.html" aria-label="Open GDBus Architecture and Programming Guide"><span class="board-graphic"><i></i><i></i><i></i><b>GDBus</b></span><span class="visual-caption">LINUX · GDBUS · IPC</span></a><div class="article-body"><div class="article-meta"><span>LINUX SYSTEMS</span><span>PDF PROGRAMMING GUIDE</span></div><h3><a href="articles/gdbus-architecture-programming-guide.html">GDBus Architecture &amp; Programming Guide</a></h3><p>Learn GDBus architecture and practical D-Bus programming for Linux applications, with an online PDF viewer and download option.</p><a class="read-link" href="articles/gdbus-architecture-programming-guide.html">Explore GDBus Guide ↗</a></div></article></div></main>
-<footer class="site-footer"><div class="container footer-inner"><a class="brand footer-brand" href="index.html"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span class="brand-text"><span>LowLevel<span class="brand-accent"> Labs</span></span><small>HARDWARE TO SOFTWARE</small></span></a><p>Technical notes on embedded systems.</p><div class="footer-links"><a href="articles.html">Articles</a><a href="about.html">About</a><a href="contact.html">Contact</a></div><small class="copyright">© <span id="year">2026</span> LowLevel Labs</small></div></footer>
-<!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script><!-- End Cloudflare Web Analytics -->
-</body></html>
+<main id="main">
+<section class="page-head simple"><div class="wrap">
+<h1>Guides and exercises</h1><p class="lede">Longer study material you can read online or download: PDF guides and worked assembly exercises.</p></div></section>
+<section class="simple"><div class="wrap"><div class="prose"><table>
+<thead><tr><th>Resource</th><th>Format</th><th>What it covers</th></tr></thead>
+<tbody>
+<tr><td><a href="articles/arm-assembly.html">ARM assembly exercises</a></td><td>Worked programs</td><td>32-bit ARM programs with complete, corrected solutions.</td></tr>
+<tr><td><a href="articles/arm-32bit-assembly-programming.html">ARM 32-bit assembly programming</a></td><td>PDF, 36 pages</td><td>Registers, AAPCS, Linux system calls, memory access, control flow and stack frames.</td></tr>
+<tr><td><a href="articles/x86-64-assembly-programming.html">x86-64 assembly: NASM and GAS</a></td><td>PDF</td><td>64-bit x86 assembly in both NASM and GNU assembler syntax.</td></tr>
+<tr><td><a href="articles/linux-dbus-architecture-engineering-guide.html">Linux D-Bus architecture</a></td><td>PDF</td><td>Buses, services, objects, interfaces and message routing.</td></tr>
+<tr><td><a href="articles/gdbus-architecture-programming-guide.html">GDBus architecture and programming</a></td><td>PDF</td><td>Writing D-Bus clients and services with GLib's GDBus API.</td></tr>
+</tbody>
+</table>
+<p>Prefer shorter reading? The <a href="articles.html">articles</a> cover the same ground in focused pieces with diagrams.</p>
+</div></div></section>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="topics/boot.html">Boot & platform</a></li><li><a href="topics/firmware.html">Embedded firmware</a></li><li><a href="topics/c.html">C for embedded</a></li><li><a href="topics/asm.html">Assembly</a></li><li><a href="topics/cpu.html">CPU internals</a></li><li><a href="topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="articles.html">All articles</a></li><li><a href="projects.html">Guides &amp; exercises</a></li><li><a href="about.html">About</a></li><li><a href="contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+
+<script src="script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

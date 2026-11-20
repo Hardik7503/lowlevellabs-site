@@ -1,0 +1,152 @@
+<!--meta
+title: VxWorks Architecture: Tasks, RTPs, BSPs and VxBus
+description: A practical map of VxWorks for embedded engineers: the wind kernel and scheduler, kernel tasks versus RTPs, semaphores and message queues, ISRs, BSPs and VxBus.
+topic: rtos
+date: 2026-11-20
+read: 12 min read
+order: 30
+lede: VxWorks runs in aircraft, spacecraft, industrial controllers and network equipment. If you are new to it, the hardest part is the vocabulary. Here is how the pieces fit together.
+-->
+<h2>The big picture</h2>
+<p>VxWorks, from Wind River, is a commercial real-time operating system with deterministic scheduling, a POSIX-compatible API surface and a long history in safety- and mission-critical products. Current releases are VxWorks 7, which is organized as layers you configure into a custom image.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 320" role="img" aria-label="VxWorks layered architecture: user-mode RTPs on top, kernel with wind scheduler, tasks, IPC and networking in the middle, VxBus drivers and BSP below, hardware at the bottom">
+<rect class="sg" x="20" y="16" width="200" height="66" rx="6"/><text class="h" x="36" y="40">RTP: app_a.vxe</text><text class="s" x="36" y="62">tasks + private memory</text>
+<rect class="sg" x="240" y="16" width="200" height="66" rx="6"/><text class="h" x="256" y="40">RTP: app_b.vxe</text><text class="s" x="256" y="62">tasks + private memory</text>
+<rect class="b" x="460" y="16" width="200" height="66" rx="6"/><text class="s" x="476" y="44">user mode, MMU-isolated</text><text class="s" x="476" y="62">system calls into kernel</text>
+<path class="ln dash" d="M20 96h640"/><text class="s" x="560" y="110">system-call boundary</text>
+<rect class="cu" x="20" y="120" width="640" height="96" rx="6"/>
+<text class="h" x="36" y="144">Kernel (supervisor mode)</text>
+<rect class="b" x="36" y="156" width="140" height="46" rx="4"/><text class="s" x="48" y="184">wind scheduler</text>
+<rect class="b" x="188" y="156" width="140" height="46" rx="4"/><text class="s" x="200" y="176">kernel tasks</text><text class="s" x="200" y="192">(downloadable modules)</text>
+<rect class="b" x="340" y="156" width="140" height="46" rx="4"/><text class="s" x="352" y="176">semaphores, msgQ,</text><text class="s" x="352" y="192">events, watchdogs</text>
+<rect class="b" x="492" y="156" width="152" height="46" rx="4"/><text class="s" x="504" y="176">I/O system, network</text><text class="s" x="504" y="192">stack, file systems</text>
+<rect class="wn" x="20" y="226" width="640" height="40" rx="6"/><text class="h" x="36" y="251">VxBus drivers</text><text class="s" x="180" y="251">matched to hardware described by the Device Tree</text>
+<rect class="ink" x="20" y="274" width="310" height="36" rx="6"/><text class="h" x="36" y="297">BSP</text><text class="s" x="80" y="297">board init, memory map, DTS</text>
+<rect class="ink" x="350" y="274" width="310" height="36" rx="6"/><text class="h" x="366" y="297">Hardware</text><text class="s" x="440" y="297">CPU, MMU, interrupt controller</text>
+</svg><figcaption>A simplified VxWorks 7 system. Kernel tasks share one address space with the kernel; RTPs run in user mode in their own protected address spaces.</figcaption></figure>
+
+<h2>Tasks and the wind scheduler</h2>
+<p>The unit of execution is a <strong>task</strong>, roughly a thread with its own stack and register context. The scheduler (historically called the <em>wind</em> kernel) is preemptive and priority-based:</p>
+<ul>
+<li>Priorities run from <strong>0 (highest) to 255 (lowest)</strong>. This is the opposite direction from FreeRTOS and POSIX, and a frequent source of porting bugs.</li>
+<li>The highest-priority ready task always runs. A task becoming ready at a higher priority preempts the current one immediately.</li>
+<li>Tasks of <em>equal</em> priority run until they block or yield, unless round-robin time slicing is enabled with <code>kernelTimeSlice()</code>.</li>
+</ul>
+```c
+#include <vxWorks.h>
+#include <taskLib.h>
+#include <stdio.h>
+
+void sensorTask(_Vx_usr_arg_t period)
+{
+    for (;;) {
+        readSensor();
+        taskDelay((int)period);          /* ticks, see sysClkRateGet() */
+    }
+}
+
+void appStart(void)
+{
+    TASK_ID tid = taskSpawn("tSensor",   /* name, shown in 'i' and debug tools */
+                            100,         /* priority: 0 high .. 255 low        */
+                            0,           /* options, e.g. VX_FP_TASK            */
+                            8192,        /* stack size in bytes                 */
+                            (FUNCPTR)sensorTask,
+                            10, 0, 0, 0, 0, 0, 0, 0, 0, 0);   /* 10 args */
+    if (tid == TASK_ID_ERROR)
+        printf("taskSpawn failed\n");
+}
+```
+<p>By convention task names start with <code>t</code>. In the kernel shell, <code>i</code> lists tasks with priority, state and stack pointer, and <code>checkStack</code> reports stack high-water marks, which is the first thing to check after a mysterious crash.</p>
+
+<h2>Kernel tasks versus RTPs</h2>
+<p>VxWorks offers two places to run application code. Choosing between them is the first architectural decision on a project.</p>
+<table>
+<thead><tr><th></th><th>Kernel application (DKM)</th><th>Real-Time Process (RTP)</th></tr></thead>
+<tbody>
+<tr><td>Mode</td><td>Supervisor, same address space as the kernel</td><td>User mode, own virtual address space</td></tr>
+<tr><td>Fault isolation</td><td>A bad pointer can take down the whole system</td><td>A fault kills the RTP; the kernel and other RTPs keep running</td></tr>
+<tr><td>Hardware access</td><td>Direct, can call any kernel API</td><td>Through drivers and system calls</td></tr>
+<tr><td>Overhead</td><td>Lowest: no system-call boundary</td><td>System calls and MMU context switches</td></tr>
+<tr><td>Typical use</td><td>Drivers, tight control loops, legacy code</td><td>Applications, third-party code, anything you want contained</td></tr>
+<tr><td>Build output</td><td>Downloadable kernel module (<code>.out</code>) or linked into the image</td><td>Executable (<code>.vxe</code>) started with <code>rtpSpawn()</code></td></tr>
+</tbody>
+</table>
+<p>A common split is: drivers and the hardest real-time loops in the kernel, everything else in RTPs.</p>
+
+<h2>Inter-task communication</h2>
+<h3>Semaphores</h3>
+<p>VxWorks has three semaphore types, each created by its own call:</p>
+```c
+SEM_ID dataReady = semBCreate(SEM_Q_PRIORITY, SEM_EMPTY);   /* binary: signalling   */
+SEM_ID slots     = semCCreate(SEM_Q_PRIORITY, 8);           /* counting: resources  */
+SEM_ID cfgLock   = semMCreate(SEM_Q_PRIORITY |              /* mutex: exclusion     */
+                              SEM_INVERSION_SAFE |          /* priority inheritance */
+                              SEM_DELETE_SAFE);             /* holder can't be deleted */
+
+semTake(cfgLock, WAIT_FOREVER);
+updateConfig();
+semGive(cfgLock);
+```
+<p>Use binary semaphores for "something happened", typically given from an ISR. Use mutex semaphores for protecting shared data: they have an owner, support recursive takes by that owner, and can do priority inheritance. See <a href="rtos-priority-inversion.html">Priority Inversion and How RTOSes Prevent It</a> for why <code>SEM_INVERSION_SAFE</code> matters.</p>
+<h3>Message queues</h3>
+```c
+typedef struct { uint16_t id; int32_t value; } sample_t;
+
+MSG_Q_ID q = msgQCreate(32, sizeof(sample_t), MSG_Q_PRIORITY);
+
+/* producer */
+sample_t s = { .id = 3, .value = adc };
+msgQSend(q, (char *)&s, sizeof s, NO_WAIT, MSG_PRI_NORMAL);
+
+/* consumer */
+sample_t r;
+if (msgQReceive(q, (char *)&r, sizeof r, WAIT_FOREVER) == sizeof r)
+    process(&r);
+```
+<p>Messages are copied in and out, so producer and consumer never share a buffer. <code>MSG_PRI_URGENT</code> puts a message at the head of the queue.</p>
+
+<h2>Interrupts</h2>
+<p>An ISR runs outside any task context, on the interrupt stack. It must not block, so it cannot take a semaphore or wait on a queue, and must not call anything that might. It can give a binary semaphore or send to a message queue with <code>NO_WAIT</code>, which is the standard way to hand work to a task:</p>
+```c
+LOCAL void uartIsr(void *arg)
+{
+    UART_DEV *dev = arg;
+    dev->rx = readRxRegister(dev);
+    clearInterrupt(dev);
+    semGive(dev->rxSem);              /* wake the handling task */
+}
+```
+<p>In VxWorks 7, drivers normally connect interrupts through VxBus (<code>vxbIntConnect()</code> and <code>vxbIntEnable()</code>) using the interrupt resources described in the Device Tree, rather than the older <code>intConnect()</code> with hard-coded vectors. <code>logMsg()</code> is safe from an ISR; <code>printf()</code> is not.</p>
+
+<h2>BSPs, VxBus and the Device Tree</h2>
+<p>A <strong>Board Support Package</strong> adapts VxWorks to a specific board: early CPU initialization, the memory map, the system clock, the console and the Device Tree source describing the hardware. Drivers are written against <strong>VxBus</strong>, the driver framework. In VxWorks 7, VxBus matches drivers to Device Tree nodes by their <code>compatible</code> string, much like Linux does, so the same driver can serve several boards.</p>
+```dts
+uart0: serial@ff000000 {
+    compatible = "xlnx,xuartps";
+    reg = <0xff000000 0x1000>;
+    interrupts = <0 21 4>;
+    clock-frequency = <100000000>;
+};
+```
+
+<h2>Projects: VSB and VIP</h2>
+<p>In Workbench or the <code>vxprj</code> command-line tool, a VxWorks 7 build has two parts:</p>
+<ul>
+<li>A <strong>VxWorks Source Build (VSB)</strong> compiles the OS libraries for your CPU and BSP with the layers and options you choose.</li>
+<li>A <strong>VxWorks Image Project (VIP)</strong> links a bootable kernel image from a VSB, selecting <em>components</em> (for example <code>INCLUDE_SHELL</code> or networking) and setting parameters such as the system clock rate.</li>
+</ul>
+<p>Application code then goes into DKM or RTP projects built against the VSB.</p>
+
+<h2>Habits for people coming from Linux or FreeRTOS</h2>
+<ul>
+<li>Check the priority direction every time you port: 0 is the <em>highest</em> in VxWorks.</li>
+<li>Kernel tasks share memory with the kernel. Treat every pointer bug as a potential system-wide crash, or move the code into an RTP.</li>
+<li>Size stacks with <code>checkStack</code> under worst-case load, then add margin. Overflow is a common source of "random" corruption.</li>
+<li>Use the kernel shell interactively: <code>i</code>, <code>ti tSensor</code>, <code>semShow</code>, <code>msgQShow</code> and <code>memShow</code> answer most "what is the system doing" questions.</li>
+<li>Capture a System Viewer trace before guessing about timing.</li>
+</ul>
+
+<div class="note"><strong>Note</strong>
+<p>Exact APIs, component names and defaults vary between VxWorks releases and BSPs. Treat this as a map and confirm details against the Wind River documentation for the release you are using.</p></div>
