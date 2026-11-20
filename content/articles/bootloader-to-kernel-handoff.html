@@ -1,11 +1,89 @@
 <!--meta
-title: From Reset Vector to main(): The Bootloader-to-Kernel Handoff
-description: Follow the stages from reset through early initialization and OS entry.
+title: From Reset Vector to Kernel Entry: The Embedded Boot Chain
+description: Follow an embedded Arm SoC from power-on through Boot ROM, SPL, Trusted Firmware and U-Boot to the Linux kernel, and learn the exact register and CPU state the kernel expects.
 topic: boot
 date: 2026-10-22
-read: 3 min read
-lede: Power-on does not jump directly into an application. A processor begins from an architecture-defined reset state, and firmware progressively establishes the environment required by later stages.
+updated: 2026-11-20
+read: 10 min read
+order: 30
+lede: An embedded Linux board does not boot in one step. Four or five small programs run in turn, each setting up just enough for the next. Understanding the chain is how you debug a board that prints nothing.
 -->
+<h2>Why so many stages?</h2>
+<p>Each stage is limited by what exists when it runs:</p>
+<ul>
+<li>At power-on, <strong>DRAM does not work</strong>. The memory controller must be configured and trained first, so the earliest code must fit in a small on-chip SRAM, often 64 to 256 KB.</li>
+<li>The code that trains DRAM is board-specific and too big for the chip's mask ROM, so it lives in flash and is loaded by the ROM.</li>
+<li>Security firmware should be separate from the bootloader and the OS so it can stay resident and protected.</li>
+<li>The full bootloader, with drivers for SD cards, USB, Ethernet and filesystems, is too big for SRAM and must run from DRAM.</li>
+</ul>
+<p>So each stage does one job, then loads a bigger stage into a bigger memory.</p>
 
-<h2>Reset and early firmware</h2><p>After reset, the CPU starts from a defined reset vector or boot ROM path. Early code may establish a stack, configure clocks, initialize SRAM, read boot straps, and locate the next image. The exact sequence depends on the SoC and security architecture.</p><h2>Boot stages</h2><p>A common embedded path is Boot ROM → first-stage loader → trusted firmware or platform initialization → U-Boot/UEFI or another boot manager → operating-system kernel. Small systems may combine several stages; secure systems may authenticate each stage before execution.</p><h2>What the kernel needs</h2><p>Before transferring control, firmware must meet the target architecture's boot protocol. Depending on platform, that may include a valid kernel image, device tree or ACPI tables, initrd, memory map, CPU mode/exception level, cache and MMU state, and required registers. Linux ARM64 boot requirements are not interchangeable with x86 UEFI conventions.</p><h2>Debugging the handoff</h2><ul><li>Confirm the image format, load address, entry point, and decompression path.</li><li>Check the bootloader log for memory reservation and device-tree selection.</li><li>Verify the expected CPU mode and MMU/cache state.</li><li>Use early console output or a debugger when normal kernel logs never appear.</li><li>Inspect whether the kernel starts and fails later, rather than assuming the jump itself failed.</li></ul><h2>Why contracts matter</h2><p>Each stage has an interface contract: image format, memory ownership, security state, and handoff registers. A successful branch to an entry point is not enough if the next stage's assumptions are violated.</p><h2>Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 330" role="img" aria-label="Embedded boot chain: Boot ROM in SRAM, SPL trains DRAM, TF-A BL31 at EL3, U-Boot at EL2, Linux kernel at EL1">
+<g transform="translate(20,14)">
+<rect class="ink" x="0" y="0" width="150" height="52" rx="6"/><text class="h" x="14" y="24">Boot ROM</text><text class="s" x="14" y="42">in the SoC, read-only</text>
+<text class="s" x="170" y="22">Reads boot pins, loads next stage from</text><text class="s" x="170" y="40">SD / eMMC / SPI flash / USB into SRAM</text>
+<rect class="cu" x="0" y="64" width="150" height="52" rx="6"/><text class="h" x="14" y="88">SPL / BL2</text><text class="s" x="14" y="106">runs from SRAM</text>
+<text class="s" x="170" y="86">Sets up clocks, trains DRAM, loads the</text><text class="s" x="170" y="104">rest of the firmware into DRAM</text>
+<rect class="wn" x="0" y="128" width="150" height="52" rx="6"/><text class="h" x="14" y="152">TF-A BL31</text><text class="s" x="14" y="170">EL3, stays resident</text>
+<text class="s" x="170" y="150">Secure monitor: power management (PSCI),</text><text class="s" x="170" y="168">secure world; drops to EL2</text>
+<rect class="sg" x="0" y="192" width="150" height="52" rx="6"/><text class="h" x="14" y="216">U-Boot</text><text class="s" x="14" y="234">EL2, in DRAM</text>
+<text class="s" x="170" y="214">Drivers, console, network, filesystems;</text><text class="s" x="170" y="232">loads kernel, DTB and initramfs</text>
+<rect class="ink" x="0" y="256" width="150" height="52" rx="6"/><text class="h" x="14" y="280">Linux kernel</text><text class="s" x="14" y="298">EL2 → EL1</text>
+<text class="s" x="170" y="278">Takes over memory and devices; U-Boot</text><text class="s" x="170" y="296">is gone, BL31 remains for PSCI calls</text>
+<path class="lc" d="M75 52v12M75 116v12M75 180v12M75 244v12"/>
+</g>
+<rect class="b" x="520" y="14" width="140" height="102" rx="6" style="stroke-dasharray:4 4"/><text class="s" x="532" y="40">on-chip SRAM</text><text class="s" x="532" y="58">only</text>
+<rect class="b" x="520" y="128" width="140" height="180" rx="6" style="stroke-dasharray:4 4"/><text class="s" x="532" y="154">DRAM available</text>
+</svg><figcaption>A typical 64-bit Arm boot chain (for example on i.MX8, Rockchip or Allwinner SoCs). Names vary by vendor, but the shape is almost always this.</figcaption></figure>
 
+<h2>Stage by stage</h2>
+<h3>1. Reset and the Boot ROM</h3>
+<p>When reset is released, the CPU fetches its first instruction from a fixed <strong>reset vector</strong>, which points into a ROM inside the SoC. Nobody can change this code; the chip vendor burned it in. It reads <strong>boot-mode pins or fuses</strong> to decide where to look (SD card, eMMC, SPI NOR, USB recovery), finds an image with a vendor-specific header, copies it into SRAM and jumps to it. On secure-boot parts it first verifies the image's signature against a key hash in fuses.</p>
+<h3>2. SPL (or BL2): making DRAM work</h3>
+<p>The <strong>Secondary Program Loader</strong> is a cut-down build of U-Boot (or, in Trusted Firmware terms, BL2). Its main job is DRAM initialization: programming the memory controller and PHY with the exact timings of the RAM chips on this board, and running training sequences. Once DRAM works, it loads the next images (BL31, U-Boot, sometimes a secure OS) into DRAM, often from a single FIT image.</p>
+<h3>3. Trusted Firmware-A BL31</h3>
+<p>On 64-bit Arm, the CPU has four <strong>exception levels</strong>: EL3 (most privileged, secure monitor), EL2 (hypervisor), EL1 (OS kernel) and EL0 (applications). BL31 runs at EL3 and <em>stays resident</em> after boot. Linux calls into it through PSCI (Power State Coordination Interface) to turn CPU cores on and off, suspend and reboot. BL31 then drops to EL2 and starts U-Boot.</p>
+<h3>4. U-Boot</h3>
+<p>The full bootloader has a command shell, storage and network drivers, and filesystem support. A typical boot script does this:</p>
+```bash
+load mmc 0:1 ${kernel_addr_r}  Image          # the uncompressed arm64 kernel
+load mmc 0:1 ${fdt_addr_r}     board.dtb      # the Device Tree blob
+load mmc 0:1 ${ramdisk_addr_r} initramfs.cpio.gz
+setenv bootargs console=ttyS0,115200 root=/dev/mmcblk0p2 rw earlycon
+booti ${kernel_addr_r} ${ramdisk_addr_r}:${filesize} ${fdt_addr_r}
+```
+<p><code>booti</code> checks the kernel image header, fixes up the Device Tree (adds the memory size, the command line and the initramfs location), puts the CPU in the required state and jumps.</p>
+
+<h2>The handoff contract</h2>
+<p>The kernel cannot assume anything the boot protocol does not promise. For arm64, the kernel's <code>Documentation/arch/arm64/booting.rst</code> defines exactly what the bootloader must guarantee at the moment it jumps:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 230" role="img" aria-label="CPU state at arm64 kernel entry: x0 holds DTB address, x1 to x3 zero, MMU off, D-cache off for the image, interrupts masked, EL2 or EL1">
+<rect class="sg" x="20" y="20" width="300" height="190" rx="8"/><text class="h" x="36" y="46">Registers</text>
+<text class="m" x="36" y="80">x0 = physical address of DTB</text>
+<text class="m" x="36" y="108">x1 = 0</text><text class="m" x="36" y="136">x2 = 0</text><text class="m" x="36" y="164">x3 = 0</text>
+<text class="s" x="36" y="192">pc = kernel image entry point</text>
+<rect class="cu" x="360" y="20" width="300" height="190" rx="8"/><text class="h" x="376" y="46">CPU state</text>
+<text x="376" y="80">MMU off</text><text x="376" y="108">Data cache off or cleaned for the image</text>
+<text x="376" y="136">All interrupts masked (DAIF)</text><text x="376" y="164">Exception level EL2 (preferred) or EL1</text>
+<text class="s" x="376" y="192">Other CPUs held in reset or spinning</text>
+</svg><figcaption>The arm64 Linux boot protocol, simplified. 32-bit Arm differs: <code>r0 = 0</code>, <code>r1</code> = machine type, <code>r2</code> = DTB address, in SVC or HYP mode.</figcaption></figure>
+<p>The DTB pointer is the most important item. The kernel image is generic; the Device Tree is how it learns this board's memory size, UART address, interrupt controller and every other device. A wrong or missing DTB is the single most common reason a kernel starts and then prints nothing.</p>
+
+<h2>Debugging a silent board</h2>
+<p>Work forward through the chain and find the last stage that produced evidence:</p>
+<table>
+<thead><tr><th>Symptom</th><th>Likely stage</th><th>What to check</th></tr></thead>
+<tbody>
+<tr><td>Nothing at all on the serial port</td><td>Boot ROM or SPL</td><td>Boot pins, image written at the right offset, correct image header, UART pins and baud rate</td></tr>
+<tr><td>SPL prints, then hangs during DRAM</td><td>SPL</td><td>DRAM configuration matches the board's RAM part</td></tr>
+<tr><td>U-Boot prompt works, "Starting kernel..." then silence</td><td>Kernel early boot</td><td>DTB matches board, <code>earlycon</code> on the command line, kernel built for this SoC, load addresses do not overlap</td></tr>
+<tr><td>Kernel log stops at mounting root</td><td>Kernel init</td><td><code>root=</code> argument, storage driver built in, initramfs present</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong><code>earlycon</code></strong> makes the kernel print through the UART before its normal console driver loads. It turns "silence after Starting kernel" into a real error message.</li>
+<li><strong>Overlapping load addresses</strong> are a classic bug: the kernel decompresses or the initramfs is loaded over the DTB. Check <code>bdinfo</code> and the sizes of each file.</li>
+<li><strong>A JTAG debugger</strong> attached at the jump can confirm <code>x0</code>, the exception level and the PC, which settles most handoff questions in minutes.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Each boot stage exists because of a constraint: no DRAM, no drivers, separate security. Boot ROM loads SPL into SRAM; SPL trains DRAM and loads TF-A and U-Boot; U-Boot loads the kernel and DTB and jumps with the CPU in the documented state. When a board is silent, find the last stage that spoke and check its contract with the next.</p></div>

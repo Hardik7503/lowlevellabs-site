@@ -136,7 +136,7 @@ static int mydev_set_gain(struct mydev *d, u8 gain)
 
 <div class="key"><strong>Key takeaway</strong>
 <p>List every context that touches the data. If any is a hard IRQ, use <code>spin_lock_irqsave()</code>; if a softirq, <code>spin_lock_bh()</code>; if all are process context and anything may sleep, use a mutex. Keep spinlock sections tiny and do user copies and allocations outside them.</p></div>
-<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="linux-driver-probe.html"><small>Previous in Linux device drivers</small><span>What Happens When a Linux Driver Probes?</span></a></nav>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="interrupt-context-vs-process-context.html"><small>Previous in Linux device drivers</small><span>Linux Kernel Contexts: Process, Softirq, and Hard IRQ</span></a></nav>
 </article></div>
 </main>
 <footer class="foot"><div class="wrap">

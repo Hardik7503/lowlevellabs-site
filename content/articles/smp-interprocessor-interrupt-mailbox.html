@@ -1,11 +1,127 @@
 <!--meta
-title: SMP Communication: IPIs, Mailboxes, and Shared Memory
-description: Compare common mechanisms for coordinating work between processor cores.
+title: SMP Communication: IPIs, Mailboxes and Shared Memory
+description: How processor cores notify each other and exchange data: inter-processor interrupts, hardware mailboxes and shared-memory rings, with diagrams, a lock-free ring buffer and Linux examples.
 topic: cpu
 date: 2026-10-22
-read: 3 min read
-lede: Multicore firmware needs a reliable way for one core to notify another, exchange data, and detect failures. Inter-processor interrupts, hardware mailboxes, and shared memory each solve a different part of this coordination problem.
+updated: 2026-11-20
+read: 11 min read
+order: 50
+lede: Cores in a multicore chip need to do two things together: tell each other "something happened", and pass data. Hardware gives you separate tools for each, and robust designs use them together.
 -->
+<h2>Two problems, kept apart</h2>
+<p>When core A has work for core B, it needs to solve:</p>
+<ol>
+<li><strong>Notification</strong>: get B's attention, even if B is busy or asleep.</li>
+<li><strong>Data transfer</strong>: get the actual payload to B, correctly ordered and intact.</li>
+</ol>
+<p>Interrupts are good at the first and useless for the second. Shared memory is good at the second and has no way to wake anybody. Most designs pair them: <em>put data in shared memory, then send an interrupt</em>.</p>
 
-<h2>Inter-processor interrupts</h2><p>An IPI is a notification sent from one CPU to another. It can request rescheduling, run a callback, or signal that shared work is ready. An IPI is not itself a data transport: the payload is commonly represented by shared state or a platform-specific mechanism.</p><h2>Hardware mailboxes</h2><p>A mailbox peripheral may provide message registers, FIFO entries, interrupt generation, and sometimes ownership rules. It can be useful between heterogeneous cores or processors. Firmware must follow the hardware's acknowledgement, queue-depth, and interrupt-clearing semantics.</p><h2>Shared memory</h2><p>Shared memory carries the actual payload efficiently, but both sides need a protocol. Define ownership, message layout, sequence numbers, buffer lifetime, and what happens when a consumer is slow or restarts.</p><h2>A robust message sequence</h2><ol><li>Producer writes the payload into an agreed buffer.</li><li>Producer applies required memory ordering or cache synchronization.</li><li>Producer publishes a sequence/state flag.</li><li>Producer notifies the consumer using an IPI or mailbox interrupt.</li><li>Consumer validates sequence and payload before responding.</li><li>Consumer publishes completion and the producer reuses the buffer only when safe.</li></ol><h2>Failure handling matters</h2><p>For safety-oriented systems, include heartbeat timeouts, sequence validation, bounded retries, and a defined response to stale or malformed messages. A timeout can detect missing progress, but it does not prove why the peer failed. Avoid two cores concurrently writing the same shared fields without a synchronization design.</p><h2>Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
+<h2>SMP and AMP</h2>
+<ul>
+<li><strong>SMP (Symmetric Multi-Processing)</strong>: identical cores run one operating system, which schedules threads on any core. Linux on a quad-core Cortex-A53 is SMP.</li>
+<li><strong>AMP (Asymmetric Multi-Processing)</strong>: different cores run different software, for example Linux on Cortex-A cores and an RTOS or bare-metal firmware on a Cortex-M or R core in the same SoC (i.MX8, STM32MP1, Zynq).</li>
+</ul>
+<p>The mechanisms below apply to both, but AMP needs more care because the two sides do not share an OS, locks or even a cache.</p>
 
+<h2>Inter-processor interrupts (IPIs)</h2>
+<p>An <strong>IPI</strong> is an interrupt one core sends to another. On Arm, the GIC interrupt controller provides <strong>Software Generated Interrupts (SGIs)</strong>, IDs 0 to 15: a core writes a register naming the target cores and the SGI number, and those cores take an interrupt. On x86 the local APIC does the same job.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 190" role="img" aria-label="Core 0 writes the GIC software-generated interrupt register, and the GIC delivers SGI 1 to core 2">
+<rect class="ink" x="20" y="20" width="120" height="50" rx="6"/><text class="h" x="46" y="50">Core 0</text>
+<rect class="cu" x="270" y="60" width="140" height="70" rx="6"/><text class="h" x="316" y="92">GIC</text><text class="s" x="286" y="112">routes SGI 1 → core 2</text>
+<rect class="b" x="540" y="10" width="120" height="40" rx="6"/><text class="s" x="572" y="35">Core 1</text>
+<rect class="sg" x="540" y="70" width="120" height="50" rx="6"/><text class="h" x="568" y="100">Core 2</text>
+<rect class="b" x="540" y="140" width="120" height="40" rx="6"/><text class="s" x="572" y="165">Core 3</text>
+<path class="lc" d="M140 45c60 0 80 30 130 40"/><text class="s" x="140" y="96">write ICC_SGI1R:</text><text class="m s" x="140" y="114">target=2, INTID=1</text>
+<path class="lc" d="M410 95h130"/>
+</svg><figcaption>An IPI carries only "interrupt number N happened". Any data must travel some other way.</figcaption></figure>
+<p>Linux uses IPIs constantly in SMP: to reschedule a thread on another CPU, to run a function on other CPUs (<code>smp_call_function_single()</code>), and for TLB shootdowns. You can watch the counts in <code>/proc/interrupts</code> under rows such as <code>IPI0: Rescheduling interrupts</code>.</p>
+```c
+/* Linux kernel: run a function on CPU 2 and wait for it to finish */
+static void read_counter(void *info)
+{
+    *(u64 *)info = read_local_counter();      /* runs on CPU 2, in IRQ context */
+}
+
+u64 val;
+smp_call_function_single(2, read_counter, &val, 1 /* wait */);
+```
+
+<h2>Hardware mailboxes</h2>
+<p>A <strong>mailbox</strong> is a peripheral built for core-to-core messages, common in heterogeneous SoCs. It typically has a few message registers or a small FIFO and raises an interrupt on the receiving side when a message arrives.</p>
+<ul>
+<li>Good for short messages: a command code, an index into a shared buffer, "ring 3 has new data".</li>
+<li>Status bits show whether the receiver has read the last message, which gives simple flow control.</li>
+<li>Linux exposes them through the <strong>mailbox framework</strong> (<code>mbox_send_message()</code>), and remoteproc/RPMsg uses them to kick the other processor.</li>
+</ul>
+
+<h2>Shared memory</h2>
+<p>For real payloads, both sides read and write an agreed region of RAM. The classic structure is a <strong>single-producer, single-consumer ring buffer</strong>: one side only writes <code>head</code>, the other only writes <code>tail</code>, so no lock is needed.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 210" role="img" aria-label="Ring buffer with 8 slots; producer writes at head, consumer reads at tail; filled slots between tail and head">
+<g transform="translate(60,60)">
+<rect class="b" x="0" y="0" width="60" height="50"/><rect class="sg" x="60" y="0" width="60" height="50"/><rect class="sg" x="120" y="0" width="60" height="50"/><rect class="sg" x="180" y="0" width="60" height="50"/>
+<rect class="b" x="240" y="0" width="60" height="50"/><rect class="b" x="300" y="0" width="60" height="50"/><rect class="b" x="360" y="0" width="60" height="50"/><rect class="b" x="420" y="0" width="60" height="50"/>
+<text class="m s" x="24" y="30">0</text><text class="m s" x="84" y="30">1</text><text class="m s" x="144" y="30">2</text><text class="m s" x="204" y="30">3</text><text class="m s" x="264" y="30">4</text><text class="m s" x="324" y="30">5</text><text class="m s" x="384" y="30">6</text><text class="m s" x="444" y="30">7</text>
+<path class="ls" d="M90 -24v20"/><text class="s ts h" x="62" y="-30">tail (consumer)</text>
+<path class="lc" d="M270 74v-20"/><text class="s tc h" x="236" y="92">head (producer)</text>
+<text class="s" x="0" y="130">Slots 1–3 hold messages. Producer writes slot 4, then advances head.</text>
+<text class="s" x="0" y="148">Empty when head == tail; full when head − tail == size.</text>
+</g>
+</svg><figcaption>A single-producer single-consumer ring. Each index has exactly one writer, so there is nothing to lock.</figcaption></figure>
+```c
+#include <stdatomic.h>
+#include <stdint.h>
+
+#define RING_SIZE 64                      /* power of two */
+
+struct msg { uint32_t cmd; uint32_t arg; };
+
+struct ring {
+    _Atomic uint32_t head;                /* written only by producer */
+    _Atomic uint32_t tail;                /* written only by consumer */
+    struct msg slot[RING_SIZE];
+};
+
+int ring_put(struct ring *r, struct msg m)          /* producer core */
+{
+    uint32_t h = atomic_load_explicit(&r->head, memory_order_relaxed);
+    uint32_t t = atomic_load_explicit(&r->tail, memory_order_acquire);
+    if (h - t == RING_SIZE)
+        return -1;                                   /* full */
+    r->slot[h % RING_SIZE] = m;                      /* 1. write the data      */
+    atomic_store_explicit(&r->head, h + 1, memory_order_release);  /* 2. publish */
+    return 0;
+}
+
+int ring_get(struct ring *r, struct msg *out)       /* consumer core */
+{
+    uint32_t t = atomic_load_explicit(&r->tail, memory_order_relaxed);
+    uint32_t h = atomic_load_explicit(&r->head, memory_order_acquire);
+    if (h == t)
+        return -1;                                   /* empty */
+    *out = r->slot[t % RING_SIZE];
+    atomic_store_explicit(&r->tail, t + 1, memory_order_release);
+    return 0;
+}
+```
+<p>The <code>release</code> store on <code>head</code> guarantees the slot data is visible before the new index; the <code>acquire</code> load on the other side guarantees the consumer reads the slot only after seeing the index. Without them, a weakly ordered CPU can expose the index first and the consumer reads garbage. Free-running unsigned indexes make full and empty unambiguous and wrap correctly.</p>
+
+<h2>AMP extras: caches and ownership</h2>
+<ul>
+<li>A Cortex-M side may not be cache-coherent with the Cortex-A side. Place the shared region in non-cacheable memory, or do explicit cache maintenance as with <a href="dma-cache-coherency.html">DMA buffers</a>.</li>
+<li>Agree on the layout precisely: fixed-width types, explicit alignment, a version field, and a magic number so each side can detect that the other is initialized.</li>
+<li>Reserve the region in both memory maps (a <code>reserved-memory</code> node in the Linux Device Tree) so neither OS hands it out for something else.</li>
+</ul>
+
+<h2>Putting it together</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 150" role="img" aria-label="Combined flow: producer writes ring slot, publishes head with release, sends IPI or mailbox kick; consumer wakes, drains the ring">
+<g transform="translate(10,40)">
+<rect class="sg" x="0" y="0" width="150" height="56" rx="6"/><text class="s" x="12" y="24">1. write message</text><text class="s" x="12" y="42">into ring slot</text>
+<rect class="sg" x="170" y="0" width="150" height="56" rx="6"/><text class="s" x="182" y="24">2. release-store</text><text class="s" x="182" y="42">head index</text>
+<rect class="cu" x="340" y="0" width="150" height="56" rx="6"/><text class="s" x="352" y="24">3. kick: IPI or</text><text class="s" x="352" y="42">mailbox write</text>
+<rect class="ink" x="510" y="0" width="150" height="56" rx="6"/><text class="s" x="522" y="24">4. receiver ISR wakes</text><text class="s" x="522" y="42">task, drains ring</text>
+</g>
+</svg><figcaption>Data through shared memory, notification through an interrupt. This is exactly how virtio and Linux RPMsg work.</figcaption></figure>
+<p>One more detail: the receiver should drain <em>everything</em> in the ring each time it wakes, and the sender can skip the kick when the ring was already non-empty. That batches notifications and avoids an interrupt per message under load.</p>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>IPIs and mailboxes notify; shared memory carries data. A single-producer single-consumer ring with release/acquire ordering moves data without locks, and a single interrupt per batch wakes the consumer. In AMP systems, also handle cache coherence, memory reservation and a precise shared layout.</p></div>

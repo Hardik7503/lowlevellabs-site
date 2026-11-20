@@ -1,11 +1,110 @@
 <!--meta
-title: NOR vs. NAND Flash: What’s the Difference?
-description: A practical comparison of NOR and NAND flash in embedded systems.
+title: NOR vs. NAND Flash: What's the Difference?
+description: How NOR and NAND flash cells are wired, why NOR can execute code in place and NAND cannot, erase blocks, bad blocks, ECC and wear, and where each is used in embedded systems.
 topic: firmware
 date: 2026-10-22
-read: 3 min read
-lede: Both are non-volatile storage, but they are optimized for different access patterns.
+updated: 2026-11-20
+read: 10 min read
+order: 40
+lede: Both keep data without power, and both are called flash. But NOR behaves like slow ROM you can read byte by byte, while NAND behaves like a cheap, dense disk that needs software to manage it. The difference starts with how the cells are wired.
 -->
+<h2>What a flash cell is</h2>
+<p>A flash cell is a transistor with an extra, electrically isolated <strong>floating gate</strong>. Pushing electrons onto that gate changes the voltage needed to switch the transistor on. Reading the cell means checking whether it switches on at a given voltage. Because the floating gate is insulated, the electrons stay put for years with no power.</p>
+<p>Two rules follow from the physics and shape everything else:</p>
+<ul>
+<li><strong>Programming</strong> can only move bits from 1 to 0.</li>
+<li><strong>Erasing</strong> (resetting bits back to 1) is only possible for a large group of cells at once, called an <strong>erase block</strong>, and wears the cells out a little each time.</li>
+</ul>
+<p>So you can never overwrite a byte in place. To change a 0 back to 1 you must erase the whole block it lives in.</p>
 
-<h2>Quick comparison</h2><table><thead><tr><th>Characteristic</th><th>NOR flash</th><th>NAND flash</th></tr></thead><tbody><tr><td>Typical strength</td><td>Random reads and code access</td><td>High-density bulk storage</td></tr><tr><td>Read pattern</td><td>Byte/address-oriented access (device dependent)</td><td>Page-oriented access</td></tr><tr><td>Erase</td><td>Sector/block erase</td><td>Block erase</td></tr><tr><td>Common uses</td><td>Boot firmware, configuration, XIP</td><td>Mass storage, filesystems, large data</td></tr></tbody></table><h2>Why NOR is often used for boot firmware</h2><p>NOR flash commonly supports random reads that make it suitable for storing executable code. On supported processors and board designs, code may be executed directly from a memory-mapped NOR device; this is called execute in place (XIP). XIP depends on the flash interface, CPU address mapping, and platform configuration—it is not automatic on every system.</p><h2>Why NAND is used for larger storage</h2><p>NAND flash offers high storage density and cost-effective capacity. It is typically accessed in pages and erased in larger blocks. Raw NAND systems usually need error-correction and bad-block management, often provided by a controller, the flash translation layer, or software stack.</p><h2>Choose based on the job</h2><ul><li>Boot code and memory-mapped firmware: NOR is often a good fit.</li><li>Large files, logs, and bulk data: NAND is often a good fit.</li><li>Always check endurance, retention, erase granularity, bus bandwidth, controller support, and power-failure behavior.</li></ul><p>This is a high-level comparison. Real device characteristics vary by part, generation, interface, and controller.</p>
+<h2>The name comes from the wiring</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 260" role="img" aria-label="NOR flash cells connected in parallel to the bit line, each individually addressable; NAND flash cells connected in series in a string">
+<text class="h" x="40" y="24">NOR: cells in parallel</text>
+<path class="ln" d="M60 50h240"/><text class="s" x="230" y="44">bit line</text>
+<g class="ln"><path d="M80 50v30M140 50v30M200 50v30M260 50v30"/></g>
+<rect class="cu" x="64" y="80" width="32" height="40" rx="3"/><rect class="cu" x="124" y="80" width="32" height="40" rx="3"/><rect class="cu" x="184" y="80" width="32" height="40" rx="3"/><rect class="cu" x="244" y="80" width="32" height="40" rx="3"/>
+<path class="ln" d="M80 120v20M140 120v20M200 120v20M260 120v20M60 140h240"/><text class="s" x="230" y="156">ground</text>
+<text class="s" x="40" y="190">Each cell connects to the bit line directly,</text><text class="s" x="40" y="208">so any single cell can be read quickly:</text><text class="s" x="40" y="226">random access, like memory.</text>
+<text class="h" x="380" y="24">NAND: cells in series</text>
+<path class="ln" d="M520 40v20"/><text class="s" x="530" y="48">bit line</text>
+<rect class="sg" x="504" y="60" width="32" height="28" rx="3"/><rect class="sg" x="504" y="92" width="32" height="28" rx="3"/><rect class="sg" x="504" y="124" width="32" height="28" rx="3"/><rect class="sg" x="504" y="156" width="32" height="28" rx="3"/>
+<path class="ln" d="M520 184v16"/><text class="s" x="530" y="198">ground</text>
+<text class="s" x="560" y="80">a "string" of</text><text class="s" x="560" y="98">32–128 cells</text>
+<text class="s" x="380" y="226">Fewer contacts per cell: much denser and cheaper,</text><text class="s" x="380" y="244">but reads happen a page at a time.</text>
+</svg><figcaption>The names describe how cells are connected, resembling NOR and NAND logic gates. Series strings need fewer wires, so NAND packs far more bits into the same silicon.</figcaption></figure>
 
+<h2>NOR flash</h2>
+<p>NOR has an interface like SRAM or ROM (parallel NOR) or a simple serial protocol (SPI or QSPI NOR, the common form today). Any byte can be read directly at its address, and reads are fast and reliable.</p>
+<p>That enables <strong>eXecute In Place (XIP)</strong>: the CPU fetches instructions straight from flash without copying them into RAM first. Almost every microcontroller runs its firmware this way, and many SoCs boot from a small SPI NOR chip.</p>
+<ul>
+<li>Typical sizes: 1 MB to 256 MB.</li>
+<li>Erase blocks (sectors): commonly 4 KB to 256 KB. Erasing is slow, tens to hundreds of milliseconds.</li>
+<li>Endurance: around 100,000 erase cycles per block.</li>
+<li>Bits are effectively always correct, so no error correction is normally needed.</li>
+</ul>
+
+<h2>NAND flash</h2>
+<p>NAND is organized like a disk. Data is read and programmed in <strong>pages</strong> (typically 2 to 16 KB, plus a small "spare" or out-of-band area per page), and erased in <strong>blocks</strong> of 64 to several hundred pages.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 210" role="img" aria-label="NAND hierarchy: device made of blocks, each block made of pages, each page with data area and spare area for ECC and metadata">
+<g transform="translate(20,30)">
+<text class="h" x="0" y="-8">Device</text>
+<rect class="b" x="0" y="0" width="150" height="150"/>
+<rect class="cu" x="0" y="0" width="150" height="30"/><text class="s" x="10" y="20">block 0</text>
+<rect class="b" x="0" y="30" width="150" height="30"/><text class="s" x="10" y="50">block 1</text>
+<text class="s" x="10" y="90">…</text>
+<rect class="wn" x="0" y="120" width="150" height="30"/><text class="s" x="10" y="140">block N (bad)</text>
+</g>
+<path class="ln dash" d="M170 30h70M170 60l70 120"/>
+<g transform="translate(240,30)">
+<text class="h" x="0" y="-8">Block (erase unit)</text>
+<rect class="sg" x="0" y="0" width="200" height="28"/><text class="s" x="10" y="19">page 0</text>
+<rect class="b" x="0" y="28" width="200" height="28"/><text class="s" x="10" y="47">page 1</text>
+<text class="s" x="10" y="80">… 64 to 512 pages</text>
+<rect class="b" x="0" y="122" width="200" height="28"/><text class="s" x="10" y="141">last page</text>
+</g>
+<path class="ln dash" d="M450 30l20 0M450 58l20 60"/>
+<g transform="translate(480,30)">
+<text class="h" x="0" y="-8">Page (read/program unit)</text>
+<rect class="sg" x="0" y="0" width="150" height="40"/><text class="s" x="10" y="25">data: 4 KB</text>
+<rect class="wn" x="150" y="0" width="40" height="40"/><text class="s" x="154" y="25">OOB</text>
+<text class="s" x="0" y="64">spare area holds ECC</text><text class="s" x="0" y="82">and bad-block markers</text>
+</g>
+</svg><figcaption>NAND reads and writes whole pages but erases whole blocks. The spare (out-of-band) area stores error-correction codes and metadata.</figcaption></figure>
+<p>NAND is not perfect, and software has to manage it:</p>
+<ul>
+<li><strong>Bad blocks</strong> exist from the factory and more appear with use. They are marked in the spare area and must be skipped.</li>
+<li><strong>Bit errors</strong> occur in normal operation, increasingly as cells wear and as more bits are stored per cell (SLC 1 bit, MLC 2, TLC 3, QLC 4). Every page needs <strong>ECC</strong> (error-correcting codes such as BCH or LDPC).</li>
+<li><strong>Wear leveling</strong> spreads erases evenly so no block dies early. SLC endures roughly 50,000 to 100,000 cycles; TLC and QLC only about 1,000 to 3,000.</li>
+<li><strong>Read disturb and retention</strong>: repeatedly reading a block or leaving it unpowered for a long time slowly corrupts it, so data must be refreshed.</li>
+</ul>
+
+<h2>Raw NAND vs managed NAND</h2>
+<p>Someone has to do the bad-block handling, ECC and wear leveling. There are two options:</p>
+<ul>
+<li><strong>Raw NAND:</strong> the SoC's NAND controller does ECC, and software does the rest. In Linux that means the MTD layer with UBI and a flash filesystem such as UBIFS.</li>
+<li><strong>Managed NAND:</strong> eMMC, SD cards, UFS and SSDs contain NAND plus a controller running a <strong>Flash Translation Layer (FTL)</strong>. The host sees an ordinary block device. This is what most products use today.</li>
+</ul>
+
+<h2>Comparison</h2>
+<table>
+<thead><tr><th></th><th>NOR</th><th>NAND</th></tr></thead>
+<tbody>
+<tr><td>Read access</td><td>Random, byte or word</td><td>Page at a time</td></tr>
+<tr><td>Execute in place</td><td>Yes</td><td>No: copy to RAM first</td></tr>
+<tr><td>Read speed</td><td>Fast random reads</td><td>Slow first access, fast sequential</td></tr>
+<tr><td>Write and erase speed</td><td>Slow</td><td>Much faster</td></tr>
+<tr><td>Density and cost per bit</td><td>Low density, expensive</td><td>High density, cheap</td></tr>
+<tr><td>Bad blocks and ECC</td><td>Rarely needed</td><td>Required</td></tr>
+<tr><td>Typical sizes</td><td>MB</td><td>GB to TB</td></tr>
+<tr><td>Typical use</td><td>Boot code, MCU firmware, configuration</td><td>OS images, filesystems, data, logs</td></tr>
+</tbody>
+</table>
+
+<h2>A typical embedded Linux board uses both</h2>
+<p>A small SPI NOR chip holds the bootloader (the Boot ROM can read it simply and reliably), and an eMMC holds the kernel, root filesystem and data. Microcontrollers usually have only NOR, built into the chip, and run code from it directly.</p>
+
+<div class="pitfall"><strong>Pitfall: writing flash from firmware</strong>
+<p>On many microcontrollers you cannot execute code from a flash bank while erasing or programming the same bank: the CPU stalls or faults. Code that updates firmware or stores settings often has to run from RAM, or use a second bank.</p></div>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>NOR wires cells in parallel: random-access reads, execute in place, reliable, but small and expensive. NAND wires cells in series: dense and cheap, but page-based, with bad blocks, bit errors and wear that software or an FTL must manage. Boot code goes in NOR; bulk storage goes in NAND.</p></div>

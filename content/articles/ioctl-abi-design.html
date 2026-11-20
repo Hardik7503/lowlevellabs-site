@@ -1,11 +1,142 @@
 <!--meta
 title: Designing a Robust ioctl Interface
-description: Structure commands, validate user input, and keep a kernel/userspace ABI maintainable.
+description: What ioctl is for, how command numbers are encoded with _IOR and _IOW, how to design structures that work on 32- and 64-bit systems, validate input safely, and keep the ABI stable.
 topic: drivers
 date: 2026-10-22
-read: 3 min read
-lede: An ioctl interface can be useful when read/write semantics are insufficient, but it becomes a contract between userspace and the kernel. A poorly designed ABI is difficult to change after applications depend on it.
+updated: 2026-11-20
+read: 10 min read
+order: 60
+lede: read() and write() move bytes. Real devices also need commands: set the sample rate, start a capture, query the firmware version. ioctl is the escape hatch for those, and once user programs depend on it, it's a promise you have to keep.
 -->
+<h2>What ioctl is</h2>
+<p><code>ioctl(fd, cmd, arg)</code> sends a numbered command to the driver behind a file descriptor, with one argument that is usually a pointer to a structure. The kernel routes it to the driver's <code>.unlocked_ioctl</code> handler.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 160" role="img" aria-label="User program calls ioctl with command and pointer to struct; kernel dispatches to driver unlocked_ioctl which copies struct in, validates, acts, copies results out">
+<rect class="b" x="20" y="40" width="190" height="80" rx="6"/><text class="h" x="36" y="64">User program</text><text class="m s" x="36" y="88">ioctl(fd,</text><text class="m s" x="36" y="106">  MYADC_SET_CONFIG, &amp;cfg)</text>
+<path class="ln" d="M210 80h50"/>
+<rect class="sg" x="260" y="40" width="140" height="80" rx="6"/><text class="h" x="276" y="64">VFS</text><text class="s" x="276" y="88">fd → struct file</text><text class="s" x="276" y="106">→ f_op</text>
+<path class="ln" d="M400 80h50"/>
+<rect class="cu" x="450" y="20" width="210" height="120" rx="6"/><text class="h" x="466" y="44">driver ioctl</text><text class="s" x="466" y="68">1. copy_from_user</text><text class="s" x="466" y="88">2. validate every field</text><text class="s" x="466" y="108">3. apply under lock</text><text class="s" x="466" y="128">4. copy_to_user results</text>
+</svg><figcaption>An ioctl is a function call across the user/kernel boundary, with all the danger that implies: every input is untrusted.</figcaption></figure>
+<p>Before adding one, ask whether something simpler fits. A single value that tools may want to read or set is often better as a sysfs attribute. Bulk data belongs in <code>read()</code>/<code>write()</code> or <code>mmap()</code>. Many device types already have a standard interface (IIO for sensors, V4L2 for cameras, ALSA for audio, input for buttons) that existing tools understand. Use ioctl for genuinely device-specific commands.</p>
 
-<h2>Use the ioctl encoding helpers</h2><p>Linux provides <code>_IO</code>, <code>_IOR</code>, <code>_IOW</code>, and <code>_IOWR</code> to encode command direction, type, number, and data size. Define commands in a shared UAPI header and avoid hand-crafted magic numbers.</p><h2>Design structures for evolution</h2><p>Prefer fixed-width types such as <code>__u32</code> and <code>__u64</code> in userspace-facing structures. Avoid raw pointers and architecture-dependent types where possible. Include a size or version field when a structure may need extension, and reserve fields with explicit expectations.</p><h2>Validate every request</h2><ul><li>Reject unknown commands with <code>-ENOTTY</code>.</li><li>Validate ranges, flags, and structure versions.</li><li>Use <code>copy_from_user()</code> and <code>copy_to_user()</code> correctly.</li><li>Do not trust lengths or pointers supplied by userspace.</li><li>Protect shared device state with suitable synchronization.</li></ul><h2>Compat and long-term support</h2><p>32-bit applications on a 64-bit kernel can expose layout differences, especially when structures contain pointers or <code>long</code>. Design stable UAPI structures and consider compat handling where required. Once released, command numbers and structure meanings should not be casually repurposed.</p><h2>Testing checklist</h2><p>Test valid commands, unknown commands, bad pointers, truncated structures, out-of-range values, concurrent callers, and repeated open/close. Test both native and compat userspace if your product supports them.</p><h2>Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
+<h2>Command numbers carry meaning</h2>
+<p>The command is a 32-bit number encoded with macros from <code>&lt;linux/ioctl.h&gt;</code>:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 140" role="img" aria-label="ioctl command layout: 2-bit direction, 14-bit size, 8-bit type magic, 8-bit number">
+<g transform="translate(20,40)">
+<rect class="cu" x="0" y="0" width="80" height="44"/><text class="m s" x="12" y="27">dir</text>
+<rect class="sg" x="80" y="0" width="260" height="44"/><text class="m s" x="96" y="27">size of argument (14 bits)</text>
+<rect class="wn" x="340" y="0" width="150" height="44"/><text class="m s" x="356" y="27">type ('magic')</text>
+<rect class="b" x="490" y="0" width="150" height="44"/><text class="m s" x="506" y="27">number</text>
+<text class="m s" x="0" y="-8">31:30</text><text class="m s" x="80" y="-8">29:16</text><text class="m s" x="340" y="-8">15:8</text><text class="m s" x="490" y="-8">7:0</text>
+<text class="s" x="0" y="72">dir: none, read (kernel→user), write (user→kernel), or both. Layout shown is the common one (x86, Arm).</text>
+</g>
+</svg><figcaption>Encoding the direction and size into the number lets the kernel and tools like <code>strace</code> understand commands, and changes the number if the structure size changes.</figcaption></figure>
+```c
+/* include/uapi/linux/myadc.h -- shared by kernel and user space */
+#include <linux/ioctl.h>
+#include <linux/types.h>
 
+#define MYADC_MAGIC  'k'      /* check Documentation/userspace-api/ioctl/ioctl-number.rst */
+
+struct myadc_config {
+    __u32 sample_rate_hz;
+    __u32 channel_mask;
+    __u32 flags;              /* MYADC_FLAG_* ; unknown bits must be zero */
+    __u32 reserved;           /* explicit padding, must be zero */
+};
+
+struct myadc_info {
+    __u32 version;
+    __u32 num_channels;
+    __u64 max_rate_hz;
+};
+
+#define MYADC_GET_INFO   _IOR(MYADC_MAGIC, 0x01, struct myadc_info)
+#define MYADC_SET_CONFIG _IOW(MYADC_MAGIC, 0x02, struct myadc_config)
+#define MYADC_START      _IO (MYADC_MAGIC, 0x03)
+```
+<p><code>_IOR</code> means user space <em>reads</em> data from the kernel; <code>_IOW</code> means user space <em>writes</em> data to the kernel. It's named from the user's point of view, which is a frequent source of confusion.</p>
+
+<h2>Structure layout: the 32/64-bit trap</h2>
+<p>The structure is part of the ABI. A 32-bit program running on a 64-bit kernel must produce the exact same bytes the kernel expects. Several C types break this:</p>
+<table>
+<thead><tr><th>Avoid</th><th>Why</th><th>Use instead</th></tr></thead>
+<tbody>
+<tr><td><code>long</code>, <code>size_t</code></td><td>4 bytes on 32-bit, 8 on 64-bit</td><td><code>__u32</code>, <code>__u64</code></td></tr>
+<tr><td>Pointers in the struct</td><td>Size differs; also needs compat conversion</td><td><code>__u64</code> holding the address, cast with <code>u64_to_user_ptr()</code></td></tr>
+<tr><td>Implicit padding</td><td><code>__u64</code> alignment differs between i386 (4) and x86-64 (8)</td><td>Order fields large to small, add explicit <code>reserved</code> fields</td></tr>
+<tr><td><code>enum</code>, <code>bool</code></td><td>Size is compiler-defined</td><td><code>__u32</code> with defined constants</td></tr>
+</tbody>
+</table>
+<p>If every field is a fixed-width type, naturally aligned with no hidden padding, the same handler can serve 32-bit callers directly: set <code>.compat_ioctl = compat_ptr_ioctl</code>.</p>
+
+<h2>The handler</h2>
+```c
+static long myadc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+    struct myadc *adc = file->private_data;
+    void __user *uarg = (void __user *)arg;
+
+    switch (cmd) {
+    case MYADC_GET_INFO: {
+        struct myadc_info info = {           /* zero-initialized: no stack leak */
+            .version      = 1,
+            .num_channels = adc->nchan,
+            .max_rate_hz  = adc->max_rate,
+        };
+        return copy_to_user(uarg, &info, sizeof(info)) ? -EFAULT : 0;
+    }
+    case MYADC_SET_CONFIG: {
+        struct myadc_config cfg;
+        int ret;
+
+        if (copy_from_user(&cfg, uarg, sizeof(cfg)))
+            return -EFAULT;
+        if (cfg.reserved || (cfg.flags & ~MYADC_FLAG_ALL))
+            return -EINVAL;                  /* reject unknown bits: keeps them usable later */
+        if (!cfg.sample_rate_hz || cfg.sample_rate_hz > adc->max_rate)
+            return -EINVAL;
+        if (cfg.channel_mask & ~GENMASK(adc->nchan - 1, 0))
+            return -EINVAL;
+
+        mutex_lock(&adc->lock);
+        ret = adc->running ? -EBUSY : myadc_apply(adc, &cfg);
+        mutex_unlock(&adc->lock);
+        return ret;
+    }
+    case MYADC_START:
+        return myadc_start(adc);
+    default:
+        return -ENOTTY;                      /* the standard "unknown ioctl" error */
+    }
+}
+```
+
+<h2>Security checklist</h2>
+<ul>
+<li><strong>Copy first, then validate the copy.</strong> Never read the user's memory twice: another thread can change it between the check and the use (a TOCTOU, "double fetch", bug).</li>
+<li><strong>Validate every field</strong>: ranges, indexes, lengths, flag bits.</li>
+<li><strong>Zero structures you return</strong> (designated initializers or <code>memset</code>), including padding, so you don't leak kernel stack contents.</li>
+<li><strong>Check permissions</strong> for privileged commands with <code>capable(CAP_SYS_ADMIN)</code> or a narrower capability.</li>
+<li><strong>Lock</strong> device state: two threads can call ioctl on the same file at once.</li>
+</ul>
+
+<h2>Keeping it stable</h2>
+<p>Linux's rule is that changes must not break existing user programs. Design for extension from the start:</p>
+<ul>
+<li>Reject unknown flags and non-zero reserved fields today, so you can give them meaning tomorrow.</li>
+<li>Never change an existing structure. Add a new command, or use a size-versioned structure where the caller passes its size and the kernel handles older, smaller versions.</li>
+<li>Put the header under <code>include/uapi/</code> so it is exported to user space, and don't include kernel-internal headers in it.</li>
+<li>Add a <code>GET_INFO</code> or version command so user space can discover capabilities instead of guessing.</li>
+</ul>
+
+<h2>Using it from user space</h2>
+```c
+int fd = open("/dev/myadc0", O_RDWR);
+struct myadc_config cfg = { .sample_rate_hz = 48000, .channel_mask = 0x3 };
+if (ioctl(fd, MYADC_SET_CONFIG, &cfg) < 0)
+    perror("MYADC_SET_CONFIG");     /* EINVAL, EBUSY, ENOTTY ... */
+```
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Encode commands with <code>_IO</code>/<code>_IOR</code>/<code>_IOW</code>, build argument structures from fixed-width types with explicit padding, copy in once and validate everything, zero what you copy out, return <code>-ENOTTY</code> for unknown commands, and treat the interface as permanent.</p></div>

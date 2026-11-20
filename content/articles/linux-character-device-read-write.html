@@ -1,26 +1,128 @@
 <!--meta
 title: From open() to read(): A Linux Character Device Walkthrough
-description: Follow a userspace file operation into a kernel driver's file_operations callbacks.
+description: Trace a read() from a user program through the system call, file descriptor table, VFS and device numbers into a character driver's file_operations, and see what each layer does.
 topic: drivers
 date: 2026-10-22
-read: 3 min read
-lede: A character device provides a familiar file interface to a kernel-managed device. Understanding the path from a userspace system call to a driver's callback makes the Linux driver model much easier to reason about.
+updated: 2026-11-20
+read: 10 min read
+order: 40
+lede: "Everything is a file" is how Unix talks to hardware. When a program reads /dev/ttyS0, it uses the same open() and read() it would use for a text file. Here is how that call finds its way to a driver.
 -->
+<h2>The whole journey at a glance</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 400" role="img" aria-label="Path of a read call: user program, libc, syscall instruction, sys_read, file descriptor table, struct file, file_operations, driver read, copy_to_user">
+<rect class="b" x="20" y="10" width="420" height="44" rx="6"/><text class="m s" x="34" y="37">user:  n = read(fd, buf, 64);</text>
+<rect class="b" x="20" y="64" width="420" height="44" rx="6"/><text class="s" x="34" y="91">libc puts syscall number + args in registers, executes svc / syscall</text>
+<path class="ln dash" d="M10 120h660"/><text class="s" x="540" y="114">user / kernel boundary</text>
+<rect class="sg" x="20" y="130" width="420" height="44" rx="6"/><text class="m s" x="34" y="157">ksys_read(): look up fd in current task's fd table</text>
+<rect class="sg" x="20" y="184" width="420" height="44" rx="6"/><text class="m s" x="34" y="211">struct file: f_op, f_pos, private_data</text>
+<rect class="sg" x="20" y="238" width="420" height="44" rx="6"/><text class="m s" x="34" y="265">vfs_read(): checks, then file-&gt;f_op-&gt;read(...)</text>
+<rect class="cu" x="20" y="292" width="420" height="44" rx="6"/><text class="m s" x="34" y="319">mydrv_read(): get data from hardware/buffer</text>
+<rect class="cu" x="20" y="346" width="420" height="44" rx="6"/><text class="m s" x="34" y="373">copy_to_user(buf, kdata, n); return n;</text>
+<path class="ln" d="M230 54v10M230 108v22M230 174v10M230 228v10M230 282v10M230 336v10"/>
+<text class="s" x="460" y="160">Kernel core</text><text class="s" x="460" y="178">(same for every file)</text>
+<text class="s" x="460" y="320">Your driver</text><text class="s" x="460" y="338">(device-specific)</text>
+</svg><figcaption>Only the last two boxes are driver code. Everything above them is shared by every file type in Linux.</figcaption></figure>
 
-<h2>The path through the kernel</h2><p>A userspace application calls <code>open()</code>, <code>read()</code>, <code>write()</code>, or <code>ioctl()</code>. The VFS resolves the file and dispatches operations through the file's operations table. For a character device, the driver's callbacks implement the behavior exposed by that device node.</p><h2>What the callbacks mean</h2><ul><li><code>open()</code> prepares per-file state and can reject unsupported access.</li><li><code>read()</code> transfers data from kernel space to userspace.</li><li><code>write()</code> accepts data from userspace for the device.</li><li><code>unlocked_ioctl()</code> handles device-specific commands.</li><li><code>release()</code> cleans up state when the file is closed.</li></ul><h2>Copy data safely</h2><p>Kernel and userspace address spaces are distinct. Use <code>copy_to_user()</code> and <code>copy_from_user()</code> for transfers; do not dereference a userspace pointer directly. These helpers can fail partially, so callbacks must handle their return values correctly.</p><pre><code>static ssize_t demo_read(struct file *file,
-                         char __user *buf,
-                         size_t count, loff_t *ppos)
+<h2>Step 1: device numbers connect the file to the driver</h2>
+<p>A device file like <code>/dev/ttyS0</code> contains no data. It is an inode that records two numbers:</p>
+```bash
+$ ls -l /dev/ttyS0 /dev/null
+crw-rw---- 1 root dialout 4, 64 Nov 20 09:00 /dev/ttyS0
+crw-rw-rw- 1 root root    1,  3 Nov 20 09:00 /dev/null
+```
+<p>The <code>c</code> means character device. <code>4, 64</code> is the <strong>major</strong> and <strong>minor</strong> number. The major number selects the driver (4 is the serial TTY driver); the minor number tells that driver which of its devices is meant (64 is the first serial port).</p>
+<p>A driver claims numbers and connects them to its operations when it registers:</p>
+```c
+static dev_t devno;
+static struct cdev my_cdev;
+
+alloc_chrdev_region(&devno, 0, 1, "mydrv");     /* get a free major, 1 minor   */
+cdev_init(&my_cdev, &mydrv_fops);               /* tie numbers to operations    */
+cdev_add(&my_cdev, devno, 1);                   /* now live                      */
+cls = class_create("mydrv");                    /* (older kernels: THIS_MODULE first) */
+device_create(cls, NULL, devno, NULL, "mydrv0");/* udev creates /dev/mydrv0      */
+```
+<p>The <a href="linux-misc-char-driver-from-scratch.html">misc device framework</a> wraps all of this in one call when you need a single device node.</p>
+
+<h2>Step 2: open() builds a struct file</h2>
+<p>When a program calls <code>open("/dev/mydrv0", O_RDONLY)</code>, the VFS resolves the path, sees a character device inode, looks up the <code>cdev</code> registered for that major/minor, and creates a <strong><code>struct file</code></strong>: the kernel's record of <em>this particular open</em>. It holds the file position (<code>f_pos</code>), the open flags, a pointer to the driver's <code>file_operations</code>, and a <code>private_data</code> pointer for the driver's use.</p>
+<p>The kernel stores a pointer to that <code>struct file</code> in the process's <strong>file descriptor table</strong> and returns the slot index, say 3. That small integer is all user space ever sees.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 220" role="img" aria-label="Process file descriptor table slots 0 to 3; slot 3 points to a struct file which points to the driver's file_operations and private data">
+<rect class="b" x="20" y="20" width="150" height="180" rx="6"/><text class="h" x="36" y="44">fd table</text>
+<text class="m s" x="36" y="74">0 → stdin</text><text class="m s" x="36" y="100">1 → stdout</text><text class="m s" x="36" y="126">2 → stderr</text>
+<rect class="cu" x="30" y="140" width="130" height="28" rx="4"/><text class="m s" x="40" y="159">3 → ●</text>
+<rect class="sg" x="250" y="60" width="200" height="120" rx="6"/><text class="h" x="266" y="84">struct file</text>
+<text class="m s" x="266" y="110">f_pos = 0</text><text class="m s" x="266" y="132">f_op ●</text><text class="m s" x="266" y="154">private_data ●</text>
+<rect class="ink" x="500" y="30" width="160" height="100" rx="6"/><text class="h" x="516" y="54">mydrv_fops</text><text class="m s" x="516" y="78">.open</text><text class="m s" x="516" y="96">.read</text><text class="m s" x="516" y="114">.write ...</text>
+<rect class="b" x="500" y="150" width="160" height="50" rx="6"/><text class="s" x="516" y="172">per-device state</text><text class="s" x="516" y="188">(your struct)</text>
+<path class="lc" d="M150 154h100M330 128h170M360 150c40 0 100 20 140 25"/>
+</svg><figcaption>A file descriptor is an index into a per-process table of <code>struct file</code> pointers. Each <code>struct file</code> points at the driver's operations.</figcaption></figure>
+<p>If the driver supplies <code>.open</code>, it is called now. That is the place to find the device from the minor number, store it in <code>file-&gt;private_data</code>, and power it up if needed:</p>
+```c
+static int mydrv_open(struct inode *inode, struct file *file)
 {
-    char data[] = "hello from kernel\n";
-    size_t len = sizeof(data) - 1;
+    struct mydev *d = container_of(inode->i_cdev, struct mydev, cdev);
+    file->private_data = d;              /* later calls get the device from here */
+    return 0;
+}
+```
 
-    if (*ppos &gt;= len)
-        return 0;
-    if (count &gt; len - *ppos)
-        count = len - *ppos;
-    if (copy_to_user(buf, data + *ppos, count))
+<h2>Step 3: read() reaches the driver</h2>
+<p><code>read(3, buf, 64)</code> traps into the kernel. The kernel fetches <code>struct file</code> from slot 3, checks the file was opened for reading, and calls <code>file-&gt;f_op-&gt;read(file, buf, 64, &amp;file-&gt;f_pos)</code>.</p>
+```c
+static ssize_t mydrv_read(struct file *file, char __user *buf,
+                          size_t count, loff_t *ppos)
+{
+    struct mydev *d = file->private_data;
+    u8 kbuf[64];
+    size_t n;
+
+    /* Block until data arrives, unless the user asked not to */
+    if (fifo_empty(d)) {
+        if (file->f_flags & O_NONBLOCK)
+            return -EAGAIN;
+        if (wait_event_interruptible(d->wq, !fifo_empty(d)))
+            return -ERESTARTSYS;         /* interrupted by a signal */
+    }
+
+    n = fifo_pop(d, kbuf, min(count, sizeof(kbuf)));
+    if (copy_to_user(buf, kbuf, n))
         return -EFAULT;
-    *ppos += count;
-    return count;
-}</code></pre><p>This snippet illustrates file-offset handling, but a production driver needs a deliberate data model, synchronization, and registration/cleanup paths.</p><h2>Prefer the right abstraction</h2><p>Many devices belong to a subsystem such as input, IIO, networking, TTY, or hwmon. Use a custom character device only when it fits the device's purpose; a bespoke ioctl ABI creates a long-term compatibility responsibility.</p><h2>Final takeaway</h2><p>Low-level engineering is about understanding the contract between hardware, firmware, and the operating system. Start with the specification, form a testable hypothesis, collect evidence, and validate behavior on the target platform.</p>
+    return n;                            /* bytes delivered; 0 would mean EOF */
+}
+```
 
+<h2>Step 4: the return value goes back up</h2>
+<p>The driver's return value travels back unchanged: a positive count becomes <code>read()</code>'s return value, and a negative error such as <code>-EAGAIN</code> becomes <code>-1</code> with <code>errno = EAGAIN</code> in user space.</p>
+
+<h2>The read() contract</h2>
+<table>
+<thead><tr><th>Return</th><th>Meaning to the caller</th></tr></thead>
+<tbody>
+<tr><td><code>n &gt; 0</code></td><td>n bytes were copied. May be less than requested; that's normal.</td></tr>
+<tr><td><code>0</code></td><td>End of file. <code>cat</code> stops. Never return 0 just because no data is ready yet.</td></tr>
+<tr><td><code>-EAGAIN</code></td><td>No data now, and the file is non-blocking.</td></tr>
+<tr><td><code>-ERESTARTSYS</code></td><td>A signal interrupted the wait; the kernel restarts or fails the call.</td></tr>
+<tr><td><code>-EFAULT</code></td><td>The user buffer was invalid.</td></tr>
+</tbody>
+</table>
+
+<h2>Other operations you'll add</h2>
+<ul>
+<li><code>.write</code>: the mirror image, using <code>copy_from_user()</code>.</li>
+<li><code>.poll</code>: lets <code>poll()</code>, <code>select()</code> and <code>epoll</code> wait on your device alongside sockets and pipes.</li>
+<li><code>.unlocked_ioctl</code>: device-specific commands that don't fit read/write. See <a href="ioctl-abi-design.html">Designing a Robust ioctl Interface</a>.</li>
+<li><code>.mmap</code>: map device memory or a DMA buffer directly into the process, for zero-copy access.</li>
+<li><code>.release</code>: called when the last reference to the <code>struct file</code> is closed, not on every <code>close()</code> if the descriptor was duplicated.</li>
+</ul>
+
+<h2>Watch it happen</h2>
+```bash
+strace -e trace=openat,read,close cat /dev/mydrv0
+# openat(AT_FDCWD, "/dev/mydrv0", O_RDONLY) = 3
+# read(3, "hello\n", 131072)               = 6
+# read(3, ...)                              <- blocks here until more data
+```
+
+<div class="key"><strong>Key takeaway</strong>
+<p>The major/minor number in the device file leads the VFS to your <code>cdev</code>; <code>open()</code> creates a <code>struct file</code> whose <code>f_op</code> points to your operations; every later call on that descriptor dispatches through it. Your driver only implements the last step: move data with <code>copy_to_user()</code>/<code>copy_from_user()</code> and return the right count or error.</p></div>
