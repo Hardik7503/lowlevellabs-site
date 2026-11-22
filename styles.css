@@ -126,6 +126,9 @@ p{margin:0 0 1em}
 .feature a:hover h3{color:var(--copper)}
 .feature figure{margin:0 0 6px;height:120px;display:flex;align-items:center;justify-content:center;border-bottom:1px dashed var(--rule);padding-bottom:12px}
 .feature figure svg{height:100%;width:auto}
+.feature img.cover{display:block;width:100%;height:auto;border-radius:6px;margin-bottom:6px;border:1px solid var(--rule)}
+.article-cover{margin:30px 0 0;max-width:880px}
+.article-cover img{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--rule-strong)}
 .feature p{color:var(--graphite);font-size:15.5px;margin:0}
 @media (max-width:860px){.feature{grid-template-columns:1fr}.feature a{border-right:0;border-bottom:1px solid var(--rule)}.feature a:last-child{border-bottom:0}}
 

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+<defs>
+  <pattern id="g" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#18283d" stroke-width="1"/></pattern>
+  <marker id="ac" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f08a4b"/></marker>
+  <marker id="at" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#43c2b8"/></marker>
+  <marker id="am" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9aa8ba"/></marker>
+  <style>
+    .t1{font:600 60px 'IBM Plex Sans Condensed';fill:#e9eef5;letter-spacing:-0.5px}
+    .t2{font:500 30px 'IBM Plex Sans Condensed';fill:#9aa8ba}
+    .chip{font:500 18px 'IBM Plex Mono';fill:#f08a4b}
+    .brand{font:600 22px 'IBM Plex Sans Condensed';fill:#e9eef5}
+    .l{font:500 17px 'IBM Plex Sans';fill:#e9eef5}
+    .s{font:400 14px 'IBM Plex Sans';fill:#9aa8ba}
+    .m{font:500 15px 'IBM Plex Mono';fill:#e9eef5}
+    .ms{font:400 13px 'IBM Plex Mono';fill:#9aa8ba}
+    .box{fill:#15253a;stroke:#34465d;stroke-width:1.5}
+    .cu{fill:#3a2416;stroke:#f08a4b;stroke-width:2}
+    .te{fill:#123331;stroke:#43c2b8;stroke-width:2}
+    .amb{fill:#352711;stroke:#f2b65a;stroke-width:2}
+    .lc{fill:none;stroke:#f08a4b;stroke-width:2.5}
+    .lt{fill:none;stroke:#43c2b8;stroke-width:2.5}
+    .lm{fill:none;stroke:#9aa8ba;stroke-width:1.8}
+    .dash{stroke-dasharray:7 6}
+    .tc{fill:#f08a4b} .tt{fill:#43c2b8} .ta{fill:#f2b65a}
+  </style>
+</defs>
+<rect width="1200" height="630" fill="#0f1b2d"/>
+<rect width="1200" height="630" fill="url(#g)"/>
+<rect x="0" y="0" width="1200" height="6" fill="#f08a4b"/>
+<text class="chip" x="64" y="88">LNX  /  Linux systems</text>
+<text class="t1" x="64" y="168">How System Calls</text>
+<text class="t1" x="64" y="236">Work</text>
+<text class="t2" x="64" y="292">on Arm64 and x86-64, step by step</text>
+<g transform="translate(64,548)">
+  <g transform="rotate(-8 8 14)"><rect x="0" y="0" width="7" height="18" rx="2" fill="#f08a4b"/><rect x="11" y="4" width="7" height="11" rx="2" fill="#f08a4b"/><rect x="0" y="22" width="7" height="11" rx="2" fill="#f08a4b"/><rect x="11" y="19" width="7" height="18" rx="2" fill="#f08a4b"/></g>
+  <text class="brand" x="32" y="26">LowLevel <tspan fill="#f08a4b">Labs</tspan></text>
+  <text class="s" x="190" y="25">lowlevellabs.in</text>
+</g>
+
+<g transform="translate(600,70)">
+  <rect class="te" x="0" y="0" width="536" height="120" rx="10"/>
+  <text class="l" x="20" y="32">User space</text><text class="ms" x="20" y="54">EL0  ·  ring 3</text>
+  <rect class="box" x="20" y="70" width="150" height="36" rx="6"/><text class="m" x="36" y="94">your program</text>
+  <rect class="box" x="190" y="70" width="150" height="36" rx="6"/><text class="m" x="208" y="94">libc write()</text>
+  <rect class="box" x="360" y="70" width="156" height="36" rx="6"/><text class="m" x="372" y="94">x8 / rax = nr</text>
+
+  <path d="M-20 160H556" stroke="#9aa8ba" stroke-width="1.5" class="dash"/>
+  <text class="s" x="0" y="150">privilege boundary</text>
+
+  <rect class="cu" x="0" y="200" width="536" height="250" rx="10"/>
+  <text class="l" x="20" y="232">Kernel</text><text class="ms" x="20" y="254">EL1  ·  ring 0</text>
+  <rect class="box" x="20" y="276" width="150" height="44" rx="6"/><text class="m" x="38" y="303">entry code</text>
+  <rect class="box" x="190" y="276" width="150" height="44" rx="6"/><text class="m" x="200" y="303">sys_call_table</text>
+  <rect class="box" x="360" y="276" width="156" height="44" rx="6"/><text class="m" x="374" y="303">ksys_write()</text>
+  <path class="lc" d="M170 298h16" marker-end="url(#ac)"/><path class="lc" d="M340 298h16" marker-end="url(#ac)"/>
+  <rect class="box" x="20" y="350" width="496" height="80" rx="6"/>
+  <text class="ms" x="36" y="380">ELR_EL1 / rcx    ← return address</text>
+  <text class="ms" x="36" y="400">SPSR_EL1 / r11   ← saved flags</text>
+  <text class="ms" x="36" y="420">VBAR+0x400 / LSTAR → entry point</text>
+
+  <path class="lc" d="M265 106V270" marker-end="url(#ac)"/>
+  <rect x="150" y="166" width="230" height="28" rx="14" fill="#0f1b2d" stroke="#f08a4b" stroke-width="1.5"/><text class="m tc" x="170" y="185">svc #0  /  syscall</text>
+  <path class="lt" d="M438 276V112" marker-end="url(#at)"/>
+    <text class="m tt" x="448" y="186">eret / sysretq</text>
+</g>
+</svg>

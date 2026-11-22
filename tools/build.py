@@ -18,7 +18,7 @@ import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SITE = "https://lowlevellabs.in"
-CSS_VER = "20261120"
+CSS_VER = "20261122"
 
 # Topic register: ordered MSB -> LSB; widths sum to 32 bits.
 TOPICS = [
@@ -57,7 +57,7 @@ def esc(s):
     return html.escape(s, quote=True)
 
 
-def layout(*, title, desc, body, depth, path, current="", head_extra="", scripts_extra=""):
+def layout(*, title, desc, body, depth, path, current="", head_extra="", scripts_extra="", image=None):
     p = "../" * depth
     nav = "".join(
         f'<a href="{p}{href}"{" aria-current=\"page\"" if key == current else ""}>{label}</a>'
@@ -75,6 +75,7 @@ def layout(*, title, desc, body, depth, path, current="", head_extra="", scripts
 <link rel="canonical" href="{canonical}">
 <meta property="og:title" content="{esc(title)}"><meta property="og:description" content="{esc(desc)}">
 <meta property="og:type" content="website"><meta property="og:url" content="{canonical}">
+{f'<meta property="og:image" content="{SITE}/{image}"><meta property="og:image:width" content="1600"><meta property="og:image:height" content="840"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="{SITE}/{image}">' if image else '<meta name="twitter:card" content="summary">'}
 <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="{p}assets/favicon.svg" type="image/svg+xml">
 {THEME_INIT}
@@ -155,6 +156,12 @@ def add_heading_ids(body):
     return body, toc
 
 
+def cover_path(slug):
+    """Relative path of an article's rendered cover, if one exists."""
+    rel = f"assets/covers/{slug}.png"
+    return rel if (ROOT / rel).exists() else None
+
+
 def fmt_date(d):
     return dt.date.fromisoformat(d).strftime("%-d %b %Y")
 
@@ -221,12 +228,15 @@ def build():
         if next_a:
             pn += f'<a class="pn next" href="{next_a["slug"]}.html"><small>Next in {t["name"]}</small><span>{esc(next_a["title"])}</span></a>'
         updated = f' <span>Updated {fmt_date(a["updated"])}</span>' if a.get("updated") else ""
+        cov = cover_path(a["slug"])
+        cover_html = (f'<figure class="article-cover"><img src="../{cov}" width="1600" height="840" '
+                      f'alt="Cover diagram: {esc(a["title"])}" fetchpriority="high"></figure>') if cov else ""
         page = f"""<header class="article-head"><div class="wrap">
 <div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/{a["topic"]}.html">{t["name"]}</a></div>
 <h1>{esc(a["title"])}</h1>
 <p class="lede">{a["lede"]}</p>
 <div class="byline"><span>{esc(a["read"])}</span><span>{fmt_date(a["date"])}</span>{updated}</div>
-</div></header>
+{cover_html}</div></header>
 <div class="wrap layout">{otp}
 <article class="prose">
 {body.strip()}
@@ -240,7 +250,7 @@ def build():
         path = f"articles/{a['slug']}.html"
         (ROOT / path).write_text(layout(title=a["title"], desc=a["description"], body=page, depth=1, path=path,
                                         current="articles", head_extra=f'<script type="application/ld+json">{jsonld}</script>',
-                                        scripts_extra=scripts))
+                                        scripts_extra=scripts, image=cov))
         out_pages.append((path, a.get("updated", a["date"])))
 
     counts = {k: sum(1 for a in arts if a["topic"] == k) for k in TOPIC}
@@ -259,10 +269,15 @@ def build():
     total = len(arts)
 
     featured = [a for a in by_date if a.get("featured")][:3]
-    feat_html = "".join(
-        f'<a href="articles/{a["slug"]}.html"><figure aria-hidden="true">{thumb(a["topic"])}</figure>'
-        f'<span class="tag">{TOPIC[a["topic"]]["name"]}</span><h3>{esc(a["title"])}</h3><p>{esc(a["description"])}</p></a>'
-        for a in featured)
+    def feature_card(a):
+        cov = cover_path(a["slug"])
+        media = (f'<img class="cover" src="{cov}" width="1600" height="840" alt="" loading="lazy">' if cov
+                 else f'<figure aria-hidden="true">{thumb(a["topic"])}</figure>')
+        return (f'<a href="articles/{a["slug"]}.html">{media}'
+                f'<span class="tag">{TOPIC[a["topic"]]["name"]}</span><h3>{esc(a["title"])}</h3>'
+                f'<p>{esc(a["description"])}</p></a>')
+
+    feat_html = "".join(feature_card(a) for a in featured)
     latest = "".join(article_row(a, 0, new_cut) for a in by_date[:8])
     topic_rows = "".join(
         f'<a class="topic-row" href="topics/{k}.html"><span class="code">{code}</span><span><h3>{name}</h3><p>{blurb}</p></span></a>'

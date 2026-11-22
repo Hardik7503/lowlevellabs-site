@@ -56,6 +56,20 @@ Inside the body you can use:
 
 Every `<h2>` becomes an entry in the article's "On this page" sidebar.
 
+## Article covers
+
+An article gets a cover image when `assets/covers/<slug>.png` exists. The build then shows it
+on the home page "Start here" card, at the top of the article, and as the link-preview image
+(`og:image`) when the URL is shared.
+
+Covers are designed as 1200×630 SVGs in `content/covers/<slug>.svg` and rendered to PNG:
+
+```bash
+pip install playwright pillow && python3 -m playwright install chromium
+python3 tools/render_covers.py <slug>      # or no argument for all covers
+python3 tools/build.py
+```
+
 ## Preview locally
 
 ```bash
