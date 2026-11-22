@@ -354,7 +354,7 @@ sudo perf trace -s -- sleep 1           # low-overhead alternative to strace</co
 
 <div class="key"><strong>Key takeaway</strong>
 <p>A system call is a controlled privilege switch. User code puts a number and arguments in registers and executes <code>svc</code> or <code>syscall</code>. The CPU saves the return point and flags (in <code>ELR_EL1</code>/<code>SPSR_EL1</code> or <code>rcx</code>/<code>r11</code>) and jumps to an entry point the kernel set up. The kernel saves the user registers in <code>pt_regs</code>, dispatches through <code>sys_call_table</code>, runs the handler with every argument treated as untrusted, then restores the registers and returns with <code>eret</code> or <code>sysretq</code>, the result in <code>x0</code> or <code>rax</code>.</p></div>
-<nav class="endmatter" aria-label="More in this topic"><a class="pn next" href="gdbus-architecture-programming-guide.html"><small>Next in Linux systems</small><span>GDBus Architecture &amp; Programming Guide</span></a></nav>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn next" href="kernel-user-split-shared-memory.html"><small>Next in Linux systems</small><span>Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory</span></a></nav>
 </article></div>
 </main>
 <footer class="foot"><div class="wrap">

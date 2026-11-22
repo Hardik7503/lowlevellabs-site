@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual vs Physical Memory: From malloc() to RAM | LowLevel Labs</title>
+<meta name="description" content="Why programs only ever see virtual addresses, how MMUs and MPUs differ, what the Linux buddy and slab allocators do, and the full path from malloc() or mmap() to a page of physical RAM.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/virtual-physical-memory-buddy-slab.html">
+<meta property="og:title" content="Virtual vs Physical Memory: From malloc() to RAM"><meta property="og:description" content="Why programs only ever see virtual addresses, how MMUs and MPUs differ, what the Linux buddy and slab allocators do, and the full path from malloc() or mmap() to a page of physical RAM.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/virtual-physical-memory-buddy-slab.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Virtual vs Physical Memory: From malloc() to RAM", "description": "Why programs only ever see virtual addresses, how MMUs and MPUs differ, what the Linux buddy and slab allocators do, and the full path from malloc() or mmap() to a page of physical RAM.", "datePublished": "2026-11-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/linux.html">Linux systems</a></div>
+<h1>Virtual vs Physical Memory: From malloc() to RAM</h1>
+<p class="lede">When your program prints a pointer, that number isn't a location in RAM. It's a virtual address, and the hardware and kernel translate it behind your back. This article follows memory from the address your code uses all the way down to a physical page, and explains the allocators that hand those pages out.</p>
+<div class="byline"><span>15 min read</span><span>22 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#two-kinds-of-address">Two kinds of address</a></li><li><a href="#why-bother-with-virtual-memory">Why bother with virtual memory?</a></li><li><a href="#pages-and-frames">Pages and frames</a></li><li><a href="#mmu-vs-mpu">MMU vs MPU</a></li><li><a href="#who-manages-physical-memory">Who manages physical memory?</a></li><li><a href="#the-buddy-allocator-whole-pages">The buddy allocator: whole pages</a></li><li><a href="#the-slab-allocator-small-objects">The slab allocator: small objects</a></li><li><a href="#from-malloc-to-ram-step-by-step">From malloc() to RAM, step by step</a></li><li><a href="#prove-it-watch-rss-grow-on-first-touch">Prove it: watch RSS grow on first touch</a></li><li><a href="#where-this-matters-in-practice">Where this matters in practice</a></li></ol></aside>
+<article class="prose">
+<h2 id="two-kinds-of-address">Two kinds of address</h2>
+<ul>
+<li>A <strong>physical address</strong> is a real location on the memory bus: this byte in this DRAM chip, or this register in this peripheral. It's what the memory controller understands.</li>
+<li>A <strong>virtual address</strong> is the number a program uses in its pointers and instructions. It means nothing to RAM until it's translated.</li>
+</ul>
+<p>On any system with an MMU running a modern OS (Linux, Windows, macOS, Android, QNX, VxWorks RTPs), <strong>every address a program uses is virtual</strong>. The program can't name a physical address at all: whatever number it puts in a pointer goes through translation first.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 210" role="img" aria-label="CPU issues virtual address 0x7f3a2c001000, the MMU uses page tables to translate it to physical address 0x1_8e3f_7000, which goes to RAM">
+<rect class="ink" x="20" y="60" width="140" height="80" rx="6"/><text class="h" x="36" y="88">CPU</text><text class="s" x="36" y="108">your load/store</text><text class="m s" x="36" y="126">VA 0x7f3a2c001000</text>
+<path class="lc" d="M160 100h70"/>
+<rect class="cu" x="230" y="50" width="200" height="100" rx="6"/><text class="h" x="246" y="76">MMU</text><text class="s" x="246" y="98">look up TLB / page tables</text><text class="s" x="246" y="116">check permissions</text><text class="s" x="246" y="134">fault if no mapping</text>
+<path class="ls" d="M430 100h70"/>
+<rect class="sg" x="500" y="60" width="160" height="80" rx="6"/><text class="h" x="516" y="88">RAM</text><text class="m s" x="516" y="110">PA 0x18e3f7000</text>
+<text class="s" x="20" y="186">The program only ever sees the left side. The kernel controls the middle. RAM only ever sees the right side.</text>
+</svg><figcaption>Every memory access is translated. The program supplies a virtual address; the MMU produces the physical one.</figcaption></figure>
+
+<h2 id="why-bother-with-virtual-memory">Why bother with virtual memory?</h2>
+<ul>
+<li><strong>Isolation:</strong> each process has its own translations, so it can't reach another's memory (see <a href="kernel-user-split-shared-memory.html">Kernel Space vs User Space</a>).</li>
+<li><strong>Simplicity:</strong> every program can be linked to run at the same addresses, and sees one large contiguous space even though its RAM is scattered across thousands of separate pages.</li>
+<li><strong>Efficiency:</strong> memory is given out only when it is actually used, files can be mapped instead of copied, and identical pages (shared libraries) exist once in RAM.</li>
+<li><strong>Protection:</strong> each page carries permissions, such as read-only code and non-executable stacks.</li>
+</ul>
+
+<h2 id="pages-and-frames">Pages and frames</h2>
+<p>Translation works on fixed-size blocks, not single bytes. The usual size is <strong>4 KB</strong>:</p>
+<ul>
+<li>Virtual memory is divided into <strong>pages</strong>.</li>
+<li>Physical memory is divided into <strong>page frames</strong> of the same size.</li>
+<li>A <strong>page table</strong> records which frame each page maps to, plus permissions.</li>
+</ul>
+<p>The low 12 bits of an address (the offset inside a 4 KB page) pass through unchanged; only the upper bits are translated. <a href="virtual-memory-mmu-tlb.html">Virtual Memory: MMU Page Walks and the TLB</a> covers the multi-level tables and TLB in detail.</p>
+
+<h2 id="mmu-vs-mpu">MMU vs MPU</h2>
+<p>Not every processor has an MMU. Microcontrollers such as Arm Cortex-M and Cortex-R usually have a simpler <strong>MPU</strong> (Memory Protection Unit). The difference matters:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 280" role="img" aria-label="MMU translates virtual addresses to different physical addresses page by page; MPU passes the address through unchanged but checks it against a few protection regions">
+<text class="h" x="20" y="22">MMU: translate + protect</text>
+<g transform="translate(20,36)">
+<rect class="sg" x="0" y="0" width="120" height="34"/><text class="m s" x="10" y="22">VA 0x400000</text>
+<rect class="sg" x="0" y="44" width="120" height="34"/><text class="m s" x="10" y="66">VA 0x401000</text>
+<rect class="cu" x="170" y="10" width="110" height="60" rx="6"/><text class="h" x="184" y="36">page</text><text class="h" x="184" y="56">tables</text>
+<rect class="b" x="0" y="140" width="120" height="34"/><text class="m s" x="10" y="162">PA 0x8E000</text>
+<rect class="b" x="160" y="140" width="120" height="34"/><text class="m s" x="170" y="162">PA 0x13000</text>
+<path class="ls" d="M120 17h50M120 61h50M200 70l-140 70M250 70v70"/>
+<text class="s" x="0" y="200">Addresses change. Each 4 KB page</text><text class="s" x="0" y="218">can go anywhere in RAM.</text>
+</g>
+<text class="h" x="370" y="22">MPU: protect only</text>
+<g transform="translate(370,36)">
+<rect class="sg" x="0" y="0" width="140" height="34"/><text class="m s" x="10" y="22">0x2000_1000</text>
+<rect class="wn" x="170" y="0" width="134" height="80" rx="6"/><text class="h" x="184" y="26">MPU</text><text class="s" x="184" y="46">8–16 regions:</text><text class="s" x="184" y="64">base, size, perms</text>
+<rect class="b" x="0" y="140" width="140" height="34"/><text class="m s" x="10" y="162">0x2000_1000</text>
+<path class="lc" d="M140 17h30M237 80v40H70v20"/>
+<text class="s" x="0" y="200">Address unchanged (physical).</text><text class="s" x="0" y="218">Access allowed or faults.</text>
+</g>
+</svg><figcaption>An MMU maps virtual pages to physical frames. An MPU doesn't translate anything: it checks physical addresses against a small set of regions.</figcaption></figure>
+<table>
+<thead><tr><th></th><th>MMU</th><th>MPU</th></tr></thead>
+<tbody>
+<tr><td>Translates addresses</td><td>Yes: virtual → physical</td><td>No: addresses are physical</td></tr>
+<tr><td>Granularity</td><td>Pages (4 KB, plus large pages)</td><td>A few regions, typically 8 or 16, each with a base and size</td></tr>
+<tr><td>Separate address spaces per process</td><td>Yes</td><td>No: one shared address space, regions reprogrammed per task</td></tr>
+<tr><td>Demand paging, swap, copy-on-write</td><td>Possible</td><td>Not possible</td></tr>
+<tr><td>Typical CPUs</td><td>Cortex-A, x86, RISC-V application cores</td><td>Cortex-M3/M4/M7/M33, Cortex-R</td></tr>
+<tr><td>Typical OS</td><td>Linux, Android, Windows, QNX</td><td>FreeRTOS, Zephyr, ThreadX, bare metal</td></tr>
+</tbody>
+</table>
+<p>So the precise rule is: <strong>with an MMU, code never sees physical addresses</strong>, because everything is translated. <strong>With an MPU, code does use physical addresses</strong>, but the MPU decides which of them each task may touch. In both cases, an unprivileged task can't reach memory the OS hasn't granted it, which is the protection that matters.</p>
+<div class="note"><strong>Even the kernel uses virtual addresses</strong>
+<p>Once the MMU is on, the Linux kernel itself works through virtual addresses: its direct map of RAM, <code>vmalloc</code> space, and <code>ioremap()</code> mappings for device registers. A driver that writes a physical address from a datasheet straight into a pointer will fault. It must map the address first.</p></div>
+
+<h2 id="who-manages-physical-memory">Who manages physical memory?</h2>
+<p>The MMU only <em>uses</em> page tables. Someone has to decide which physical frames are free, hand them out and take them back. In Linux, that's a stack of allocators, each built on the one below:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 290" role="img" aria-label="Linux memory allocator layers: user malloc and mmap on top, then page faults; kernel kmalloc and slab caches; vmalloc; all built on the buddy allocator which manages physical page frames">
+<g transform="translate(20,10)">
+<rect class="sg" x="0" y="0" width="300" height="46" rx="6"/><text class="h" x="14" y="22">User: malloc() / mmap()</text><text class="s" x="14" y="38">glibc, your program</text>
+<rect class="sg" x="340" y="0" width="300" height="46" rx="6"/><text class="h" x="354" y="22">Kernel: kmalloc() / kmem_cache</text><text class="s" x="354" y="38">drivers, filesystems, networking</text>
+<rect class="b" x="0" y="70" width="300" height="46" rx="6"/><text class="h" x="14" y="92">Page fault handler</text><text class="s" x="14" y="108">allocates a page on first touch</text>
+<rect class="cu" x="340" y="70" width="300" height="46" rx="6"/><text class="h" x="354" y="92">Slab allocator (SLUB)</text><text class="s" x="354" y="108">small objects carved from pages</text>
+<rect class="wn" x="0" y="150" width="640" height="56" rx="6"/><text class="h" x="14" y="174">Buddy allocator</text><text class="s" x="14" y="194">hands out physical page frames in blocks of 1, 2, 4, 8 … 1024 pages</text>
+<rect class="ink" x="0" y="230" width="640" height="46" rx="6"/><text class="h" x="14" y="258">Physical RAM, divided into 4 KB page frames</text>
+<path class="ln" d="M150 46v24M490 46v24M150 116v34M490 116v34M320 206v24"/>
+</g>
+</svg><figcaption>Everything ultimately comes from the buddy allocator. The slab allocator sits on top of it for small kernel objects.</figcaption></figure>
+
+<h2 id="the-buddy-allocator-whole-pages">The buddy allocator: whole pages</h2>
+<p>The <strong>buddy allocator</strong> manages physical memory in blocks of 2<sup>n</sup> contiguous pages. <em>n</em> is called the <strong>order</strong>: order 0 is 1 page (4 KB), order 1 is 2 pages (8 KB), up to order 10, 1024 pages (4 MB), by default.</p>
+<p>It keeps a free list for each order. The rules are simple:</p>
+<ul>
+<li><strong>Allocating:</strong> take a block from the free list of the order you need. If that list is empty, take a bigger block and <strong>split</strong> it in half repeatedly. Each half of a split is the other's <em>buddy</em>. Keep one half, put the other on the smaller list.</li>
+<li><strong>Freeing:</strong> when a block is freed, check whether its buddy is also free. If so, <strong>merge</strong> them into a block of the next order, and repeat upward.</li>
+</ul>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 290" role="img" aria-label="Buddy allocation of one page from a free 8-page block: split 8 into 4 plus 4, split 4 into 2 plus 2, split 2 into 1 plus 1, allocate one page; freeing reverses the merges">
+<text class="s" x="20" y="22">Request: 1 page (order 0). Smallest free block: 8 pages (order 3).</text>
+<g transform="translate(20,40)">
+<text class="m s" x="0" y="20">order 3</text>
+<rect class="b" x="80" y="0" width="560" height="30"/><text class="s" x="320" y="20">8 pages free</text>
+<text class="m s" x="0" y="70">split</text>
+<rect class="b" x="80" y="50" width="280" height="30"/><rect class="sg" x="360" y="50" width="280" height="30"/><text class="s" x="440" y="70">4 → order-2 free list</text>
+<text class="m s" x="0" y="120">split</text>
+<rect class="b" x="80" y="100" width="140" height="30"/><rect class="sg" x="220" y="100" width="140" height="30"/><text class="s" x="226" y="120">2 → order-1 list</text>
+<text class="m s" x="0" y="170">split</text>
+<rect class="cu" x="80" y="150" width="70" height="30"/><text class="s" x="88" y="170">used</text><rect class="sg" x="150" y="150" width="70" height="30"/><text class="s" x="156" y="170">1 free</text>
+<text class="s" x="0" y="214">Free that page later: its buddy (1 free) is free → merge to 2 → its buddy is free → merge to 4 →</text>
+<text class="s" x="0" y="232">merge to 8. Memory goes back to one large block, which limits fragmentation.</text>
+</g>
+</svg><figcaption>Splitting a large block to serve a small request, and merging buddies back together on free.</figcaption></figure>
+<p>Finding a block's buddy is pure arithmetic: flip one bit of its page number. That makes the allocator very fast. You can see each order's free list on any Linux system:</p>
+<pre><code class="language-bash">$ cat /proc/buddyinfo
+Node 0, zone      DMA      0      0      0      0      0      0      0      0      1      1      3
+Node 0, zone    DMA32      0      3      5      1      5      4      3      3      4      2    752
+Node 0, zone   Normal    297    139     96     48     17     11      4      5      4      4     39
+#                     order 0      1      2      3      4      5      6      7      8      9     10</code></pre>
+<p>Each column is the number of free blocks of that order. On this machine, <code>Normal</code> has 297 free single pages and 39 free 4 MB blocks. If the high orders drop to zero while total free memory is still high, memory is <strong>fragmented</strong>: a driver needing 64 contiguous pages for DMA may fail even though plenty of single pages are free.</p>
+<p>In the kernel: <code>alloc_pages(GFP_KERNEL, order)</code> returns a <code>struct page</code>; <code>__get_free_pages()</code> returns its kernel virtual address.</p>
+
+<h2 id="the-slab-allocator-small-objects">The slab allocator: small objects</h2>
+<p>Most kernel allocations are small: a 64-byte network buffer header, a 192-byte <code>dentry</code>, a 600-byte inode. Giving each a whole 4 KB page would waste most of it. The <strong>slab allocator</strong> fixes that:</p>
+<ol>
+<li>It gets pages from the buddy allocator. One or more pages make a <strong>slab</strong>.</li>
+<li>It cuts each slab into equal-sized <strong>slots</strong> for one object type or size.</li>
+<li>A <strong>cache</strong> groups all slabs for that type, tracking which slots are free.</li>
+</ol>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 270" role="img" aria-label="Slab allocator: a cache for vm_area_struct objects holds slabs; each slab is a 4 KB page from the buddy allocator divided into 21 slots of 192 bytes, some used, some free">
+<rect class="cu" x="20" y="20" width="200" height="80" rx="6"/><text class="h" x="36" y="46">cache</text><text class="m s" x="36" y="68">vm_area_struct</text><text class="s" x="36" y="88">192-byte objects</text>
+<path class="ln" d="M220 60h40"/>
+<g transform="translate(260,20)">
+<text class="s" x="0" y="-4">slab = one 4 KB page from buddy, 21 slots</text>
+<g>
+<rect class="sg" x="0" y="0" width="56" height="36"/><rect class="sg" x="56" y="0" width="56" height="36"/><rect class="b" x="112" y="0" width="56" height="36"/><rect class="sg" x="168" y="0" width="56" height="36"/><rect class="b" x="224" y="0" width="56" height="36"/><rect class="sg" x="280" y="0" width="56" height="36"/><rect class="sg" x="336" y="0" width="56" height="36"/>
+<rect class="b" x="0" y="36" width="56" height="36"/><rect class="sg" x="56" y="36" width="56" height="36"/><rect class="sg" x="112" y="36" width="56" height="36"/><rect class="b" x="168" y="36" width="56" height="36"/><rect class="b" x="224" y="36" width="56" height="36"/><rect class="sg" x="280" y="36" width="56" height="36"/><rect class="b" x="336" y="36" width="56" height="36"/>
+<rect class="sg" x="0" y="72" width="56" height="36"/><rect class="b" x="56" y="72" width="56" height="36"/><rect class="sg" x="112" y="72" width="56" height="36"/><rect class="sg" x="168" y="72" width="56" height="36"/><rect class="b" x="224" y="72" width="56" height="36"/><rect class="sg" x="280" y="72" width="56" height="36"/><rect class="b" x="336" y="72" width="56" height="36"/>
+</g>
+</g>
+<rect class="sg" x="260" y="150" width="18" height="14"/><text class="s" x="286" y="162">in use</text><rect class="b" x="360" y="150" width="18" height="14"/><text class="s" x="386" y="162">free slot</text>
+<text class="s" x="20" y="200">kmem_cache_alloc(vma_cachep) takes a free slot: no search, no splitting, often just a pointer pop.</text>
+<text class="s" x="20" y="220">kmem_cache_free() puts the slot back. When a whole slab is empty, its page can return to buddy.</text>
+<text class="s" x="20" y="240">kmalloc(n) uses general caches of fixed sizes: kmalloc-8, -16, -32, -64 … -8k.</text>
+</svg><figcaption>A slab cache turns whole pages into many same-sized objects. 21 × 192 bytes = 4032 bytes fits in one 4 KB page.</figcaption></figure>
+<p>Benefits: almost no wasted space, very fast allocation and free, and objects of the same type sit together, which is good for the CPU cache. Linux has had three implementations (SLAB, SLOB and SLUB); current kernels use only <strong>SLUB</strong>, but the idea and the name "slab" remain. Real numbers from a running system:</p>
+<pre><code class="language-bash">$ sudo cat /proc/slabinfo          # or: sudo slabtop
+# name            &lt;active_objs&gt; &lt;num_objs&gt; &lt;objsize&gt; &lt;objperslab&gt; &lt;pagesperslab&gt;
+dentry              4011   4011    192   21    1
+vm_area_struct       756    756    192   21    1
+task_struct          115    120   5888    5    8
+kmalloc-64          1536   1536     64   64    1</code></pre>
+<p><code>task_struct</code>, the kernel's per-thread structure, is 5888 bytes, so the cache uses slabs of 8 pages (order 3, from the buddy allocator) holding 5 objects each.</p>
+
+<h3>Buddy vs slab in one table</h3>
+<table>
+<thead><tr><th></th><th>Buddy allocator</th><th>Slab allocator</th></tr></thead>
+<tbody>
+<tr><td>Unit</td><td>Pages: 1, 2, 4 … 1024 contiguous</td><td>Objects: bytes to a few KB</td></tr>
+<tr><td>Gets memory from</td><td>Physical RAM directly</td><td>The buddy allocator</td></tr>
+<tr><td>Kernel API</td><td><code>alloc_pages()</code>, <code>__get_free_pages()</code></td><td><code>kmalloc()</code>, <code>kmem_cache_alloc()</code></td></tr>
+<tr><td>Main problem it solves</td><td>Fast page allocation, limiting fragmentation</td><td>Waste and speed for small, frequent objects</td></tr>
+<tr><td>Inspect with</td><td><code>/proc/buddyinfo</code></td><td><code>/proc/slabinfo</code>, <code>slabtop</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="from-malloc-to-ram-step-by-step">From malloc() to RAM, step by step</h2>
+<p>Now the full journey. A program calls <code>malloc(256 MB)</code> and then writes to the memory.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 440" role="img" aria-label="Allocation flow: malloc in glibc, brk or mmap system call, kernel creates a VMA with no RAM, first access causes a page fault, kernel allocates a zeroed page from buddy, writes the page table entry, access retries and succeeds">
+<g transform="translate(20,10)">
+<rect class="sg" x="0" y="0" width="430" height="50" rx="6"/><text class="h" x="14" y="22">1. malloc(size) in glibc</text><text class="s" x="14" y="40">small: carve from existing heap · large (≥128 KB): ask the kernel</text>
+<rect class="sg" x="0" y="60" width="430" height="50" rx="6"/><text class="h" x="14" y="82">2. System call: brk() or mmap()</text><text class="m s" x="14" y="100">mmap(NULL, size, RW, MAP_PRIVATE|MAP_ANONYMOUS)</text>
+<rect class="cu" x="0" y="120" width="430" height="50" rx="6"/><text class="h" x="14" y="142">3. Kernel records a VMA</text><text class="s" x="14" y="160">reserves virtual addresses only · no RAM, no page-table entries</text>
+<rect class="b" x="0" y="180" width="430" height="50" rx="6"/><text class="h" x="14" y="202">4. Program writes to p[0]</text><text class="s" x="14" y="220">MMU finds no valid entry → page fault exception</text>
+<rect class="cu" x="0" y="240" width="430" height="50" rx="6"/><text class="h" x="14" y="262">5. Fault handler checks the VMA</text><text class="s" x="14" y="280">address inside a writable VMA? yes → valid, allocate</text>
+<rect class="wn" x="0" y="300" width="430" height="50" rx="6"/><text class="h" x="14" y="322">6. Buddy allocator gives a page frame</text><text class="s" x="14" y="340">order-0 page, zero-filled (never leak old data)</text>
+<rect class="cu" x="0" y="360" width="430" height="50" rx="6"/><text class="h" x="14" y="382">7. Kernel writes the PTE, returns from fault</text><text class="s" x="14" y="400">instruction retries · succeeds · TLB caches it</text>
+</g>
+<g transform="translate(480,10)">
+<text class="s" x="0" y="30">user space</text><path class="ln" d="M-10 0v110"/>
+<text class="s" x="0" y="150">kernel, at call</text>
+<text class="s" x="0" y="214">later, on first</text><text class="s" x="0" y="230">touch of EACH page</text>
+<path class="ln" d="M-10 180v230"/>
+<text class="s" x="0" y="330">physical RAM</text><text class="s" x="0" y="346">used only now</text>
+</g>
+</svg><figcaption><code>malloc</code> and <code>mmap</code> only reserve address space. Physical pages are allocated one at a time, when each page is first touched.</figcaption></figure>
+
+<h3>Step 1: glibc decides</h3>
+<p><code>malloc</code> is a library function, not a system call. glibc keeps its own pool of memory and serves small requests from it without involving the kernel. When it needs more:</p>
+<ul>
+<li>Small allocations grow the <strong>heap</strong> with <code>brk()</code>, which moves the end of the data segment up.</li>
+<li>Requests at or above <code>M_MMAP_THRESHOLD</code> (128 KB by default, adjusted dynamically) get their own <strong>anonymous mapping</strong> with <code>mmap()</code>, so they can be returned to the kernel independently with <code>munmap()</code> on <code>free()</code>.</li>
+</ul>
+<h3>Steps 2–3: the kernel reserves addresses, not RAM</h3>
+<p>The kernel creates a <strong>VMA</strong> (<code>struct vm_area_struct</code>, allocated from its own slab cache): a record saying "addresses X to Y are valid, readable and writable, anonymous". That's all. No physical page is allocated and no page-table entry is written. This is why <code>malloc</code> of a huge size can succeed instantly, and part of why Linux can promise more memory than exists (<strong>overcommit</strong>).</p>
+<h3>Steps 4–7: the page fault does the real allocation</h3>
+<p>The first write to each page triggers a <strong>page fault</strong>. The kernel's handler (<code>handle_mm_fault()</code>) looks up the faulting address among the process's VMAs:</p>
+<ul>
+<li><strong>Not in any VMA, or not writable:</strong> invalid access. The process gets <code>SIGSEGV</code>, the familiar segmentation fault.</li>
+<li><strong>In a valid VMA:</strong> allocate a page frame from the buddy allocator, fill it with zeros (so you never see another process's old data), write the page-table entry, and return. The CPU re-executes the instruction, which now succeeds.</li>
+</ul>
+<p>Reads of never-written anonymous memory are even cheaper: Linux maps a single shared <strong>zero page</strong> read-only, and allocates a real page only when you write.</p>
+
+<h2 id="prove-it-watch-rss-grow-on-first-touch">Prove it: watch RSS grow on first touch</h2>
+<p>Two numbers in <code>/proc/self/status</code> tell the story: <code>VmSize</code> is the virtual address space reserved; <code>VmRSS</code> (resident set size) is physical RAM actually in use.</p>
+<pre><code class="language-c">/* touch.c  build: gcc -O2 touch.c -o touch */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+static void show(const char *when)
+{
+    char line[256];
+    FILE *f = fopen("/proc/self/status", "r");
+    while (fgets(line, sizeof line, f))
+        if (!strncmp(line, "VmSize", 6) || !strncmp(line, "VmRSS", 5))
+            printf("%-22s %s", when, line);
+    fclose(f);
+}
+
+int main(void)
+{
+    const size_t size = 256u &lt;&lt; 20;            /* 256 MB */
+    show("start:");
+
+    char *buf = malloc(size);                  /* large: glibc uses mmap() */
+    if (!buf) return 1;
+    show("after malloc:");
+
+    for (size_t i = 0; i &lt; size / 2; i += 4096)
+        ((volatile char *)buf)[i] = 1;         /* write one byte per 4 KB page, first half */
+    show("after touching half:");
+
+    free(buf);                                 /* munmap(): pages go back */
+    show("after free:");
+    return 0;
+}</code></pre>
+<p>Real output from a Linux machine:</p>
+<pre><code class="language-text">start:                 VmSize:	    2708 kB
+start:                 VmRSS:	    1400 kB
+after malloc:          VmSize:	  264856 kB     ← +256 MB of address space
+after malloc:          VmRSS:	    1536 kB     ← but no RAM
+after touching half:   VmSize:	  264856 kB
+after touching half:   VmRSS:	  132604 kB     ← +128 MB: one page per first touch
+after free:            VmSize:	    2708 kB
+after free:            VmRSS:	    1532 kB     ← all returned</code></pre>
+<p>Exactly as the diagram predicts: <code>malloc</code> reserved 256 MB of virtual addresses, physical memory arrived only for the half we touched (32,768 page faults, one per page), and <code>free</code> handed everything back. The <code>volatile</code> stops the compiler from removing writes it can see are never read.</p>
+<p>Confirm the system calls with <code>strace</code>:</p>
+<pre><code class="language-bash">$ strace -e trace=mmap,munmap ./touch 2&gt;&amp;1 | grep 268
+mmap(NULL, 268439552, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7fd6d01ff000
+munmap(0x7fd6d01ff000, 268439552)       = 0</code></pre>
+<p>The extra 4096 bytes are glibc's chunk header, rounded up to a whole page.</p>
+
+<h2 id="where-this-matters-in-practice">Where this matters in practice</h2>
+<ul>
+<li><strong>Latency-sensitive code</strong> (audio, control loops, trading) pre-touches its buffers at startup and calls <code>mlockall(MCL_CURRENT | MCL_FUTURE)</code>, so no page fault happens at a critical moment.</li>
+<li><strong>"Free" in <code>top</code> is misleading.</strong> Look at <code>MemAvailable</code> in <code>/proc/meminfo</code>; Linux deliberately fills spare RAM with page cache.</li>
+<li><strong>The OOM killer</strong> exists because of overcommit: if processes touch more memory than RAM and swap can supply, the kernel must kill one.</li>
+<li><strong>DMA buffers need physically contiguous memory</strong> or an IOMMU. That's a buddy-allocator problem: use the DMA API or CMA (contiguous memory allocator) rather than hoping high-order allocations succeed late in uptime.</li>
+<li><strong>On MPU-only microcontrollers</strong> there's no demand paging: <code>malloc</code> in newlib or an RTOS heap returns real physical memory immediately, and fragmentation is yours to manage. Many safety-critical systems forbid dynamic allocation after startup for that reason.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Programs on MMU systems only see virtual addresses; the MMU translates every access using page tables the kernel controls. MPU systems keep physical addresses but restrict access. Linux hands out physical page frames with the buddy allocator, and carves small kernel objects from pages with the slab allocator. <code>malloc</code>/<code>mmap</code> only reserve address space; the first touch of each page faults, and only then does the kernel take a frame from the buddy allocator and map it.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="kernel-user-split-shared-memory.html"><small>Previous in Linux systems</small><span>Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory</span></a><a class="pn next" href="gdbus-architecture-programming-guide.html"><small>Next in Linux systems</small><span>GDBus Architecture &amp; Programming Guide</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>
