@@ -7,11 +7,12 @@
 <link rel="canonical" href="https://lowlevellabs.in/">
 <meta property="og:title" content="LowLevel Labs: embedded systems, drivers and CPU internals"><meta property="og:description" content="Explanations, diagrams and working code for embedded firmware, Linux device drivers, C, assembly, CPU architecture, RTOS and VxWorks.">
 <meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/">
+<meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=20261120">
+<link rel="stylesheet" href="styles.css?v=20261122">
 
 </head>
 <body>
@@ -34,7 +35,7 @@
 </div></div></section>
 <section class="section"><div class="wrap">
 <div class="section-head"><div><h2>Start here</h2><p>Three in-depth pieces, each with diagrams and code you can run.</p></div></div>
-<div class="feature"><a href="articles/system-calls-arm64-x86-64.html"><figure aria-hidden="true"><svg class="dg" viewBox="0 0 200 110"><rect class="cu" x="8" y="12" width="70" height="16" rx="2"/><rect class="sg" x="38" y="30" width="70" height="16" rx="2"/><rect class="b" x="68" y="48" width="70" height="16" rx="2"/><rect class="b" x="98" y="66" width="70" height="16" rx="2"/><rect class="b" x="128" y="84" width="70" height="16" rx="2"/></svg></figure><span class="tag">Linux systems</span><h3>How System Calls Work on Arm64 and x86-64</h3><p>Step by step, how a Linux system call crosses from user space into the kernel and back on AArch64 (svc) and x86-64 (syscall): registers, privilege switch, kernel entry, the syscall table, return, errors and the vDSO.</p></a><a href="articles/virtual-physical-memory-buddy-slab.html"><figure aria-hidden="true"><svg class="dg" viewBox="0 0 200 110"><rect class="cu" x="8" y="12" width="70" height="16" rx="2"/><rect class="sg" x="38" y="30" width="70" height="16" rx="2"/><rect class="b" x="68" y="48" width="70" height="16" rx="2"/><rect class="b" x="98" y="66" width="70" height="16" rx="2"/><rect class="b" x="128" y="84" width="70" height="16" rx="2"/></svg></figure><span class="tag">Linux systems</span><h3>Virtual vs Physical Memory: From malloc() to RAM</h3><p>Why programs only ever see virtual addresses, how MMUs and MPUs differ, what the Linux buddy and slab allocators do, and the full path from malloc() or mmap() to a page of physical RAM.</p></a><a href="articles/kernel-user-split-shared-memory.html"><figure aria-hidden="true"><svg class="dg" viewBox="0 0 200 110"><rect class="cu" x="8" y="12" width="70" height="16" rx="2"/><rect class="sg" x="38" y="30" width="70" height="16" rx="2"/><rect class="b" x="68" y="48" width="70" height="16" rx="2"/><rect class="b" x="98" y="66" width="70" height="16" rx="2"/><rect class="b" x="128" y="84" width="70" height="16" rx="2"/></svg></figure><span class="tag">Linux systems</span><h3>Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory</h3><p>Why 32-bit Linux gives each process 3 GB of user space and 1 GB of kernel space, how 64-bit changes it, how page tables keep processes apart, and how the kernel lets separate processes share memory.</p></a></div>
+<div class="feature"><a href="articles/system-calls-arm64-x86-64.html"><img class="cover" src="assets/covers/system-calls-arm64-x86-64.png" width="1600" height="840" alt="" loading="lazy"><span class="tag">Linux systems</span><h3>How System Calls Work on Arm64 and x86-64</h3><p>Step by step, how a Linux system call crosses from user space into the kernel and back on AArch64 (svc) and x86-64 (syscall): registers, privilege switch, kernel entry, the syscall table, return, errors and the vDSO.</p></a><a href="articles/virtual-physical-memory-buddy-slab.html"><img class="cover" src="assets/covers/virtual-physical-memory-buddy-slab.png" width="1600" height="840" alt="" loading="lazy"><span class="tag">Linux systems</span><h3>Virtual vs Physical Memory: From malloc() to RAM</h3><p>Why programs only ever see virtual addresses, how MMUs and MPUs differ, what the Linux buddy and slab allocators do, and the full path from malloc() or mmap() to a page of physical RAM.</p></a><a href="articles/kernel-user-split-shared-memory.html"><img class="cover" src="assets/covers/kernel-user-split-shared-memory.png" width="1600" height="840" alt="" loading="lazy"><span class="tag">Linux systems</span><h3>Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory</h3><p>Why 32-bit Linux gives each process 3 GB of user space and 1 GB of kernel space, how 64-bit changes it, how page tables keep processes apart, and how the kernel lets separate processes share memory.</p></a></div>
 </div></section>
 <section class="section"><div class="wrap">
 <div class="section-head"><div><h2>Latest articles</h2></div><a href="articles.html">All articles</a></div>
@@ -53,7 +54,7 @@
 <div><h2>Site</h2><ul><li><a href="articles.html">All articles</a></li><li><a href="projects.html">Guides &amp; exercises</a></li><li><a href="about.html">About</a></li><li><a href="contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
 </div></footer>
 
-<script src="script.js?v=20261120" defer></script>
+<script src="script.js?v=20261122" defer></script>
 <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
 </body>
 </html>

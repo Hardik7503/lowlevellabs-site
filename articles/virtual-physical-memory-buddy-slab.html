@@ -7,11 +7,12 @@
 <link rel="canonical" href="https://lowlevellabs.in/articles/virtual-physical-memory-buddy-slab.html">
 <meta property="og:title" content="Virtual vs Physical Memory: From malloc() to RAM"><meta property="og:description" content="Why programs only ever see virtual addresses, how MMUs and MPUs differ, what the Linux buddy and slab allocators do, and the full path from malloc() or mmap() to a page of physical RAM.">
 <meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/virtual-physical-memory-buddy-slab.html">
+<meta property="og:image" content="https://lowlevellabs.in/assets/covers/virtual-physical-memory-buddy-slab.png"><meta property="og:image:width" content="1600"><meta property="og:image:height" content="840"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://lowlevellabs.in/assets/covers/virtual-physical-memory-buddy-slab.png">
 <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../styles.css?v=20261120">
+<link rel="stylesheet" href="../styles.css?v=20261122">
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Virtual vs Physical Memory: From malloc() to RAM", "description": "Why programs only ever see virtual addresses, how MMUs and MPUs differ, what the Linux buddy and slab allocators do, and the full path from malloc() or mmap() to a page of physical RAM.", "datePublished": "2026-11-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
 </head>
 <body>
@@ -28,7 +29,7 @@
 <h1>Virtual vs Physical Memory: From malloc() to RAM</h1>
 <p class="lede">When your program prints a pointer, that number isn't a location in RAM. It's a virtual address, and the hardware and kernel translate it behind your back. This article follows memory from the address your code uses all the way down to a physical page, and explains the allocators that hand those pages out.</p>
 <div class="byline"><span>15 min read</span><span>22 Nov 2026</span></div>
-</div></header>
+<figure class="article-cover"><img src="../assets/covers/virtual-physical-memory-buddy-slab.png" width="1600" height="840" alt="Cover diagram: Virtual vs Physical Memory: From malloc() to RAM" fetchpriority="high"></figure></div></header>
 <div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#two-kinds-of-address">Two kinds of address</a></li><li><a href="#why-bother-with-virtual-memory">Why bother with virtual memory?</a></li><li><a href="#pages-and-frames">Pages and frames</a></li><li><a href="#mmu-vs-mpu">MMU vs MPU</a></li><li><a href="#who-manages-physical-memory">Who manages physical memory?</a></li><li><a href="#the-buddy-allocator-whole-pages">The buddy allocator: whole pages</a></li><li><a href="#the-slab-allocator-small-objects">The slab allocator: small objects</a></li><li><a href="#from-malloc-to-ram-step-by-step">From malloc() to RAM, step by step</a></li><li><a href="#prove-it-watch-rss-grow-on-first-touch">Prove it: watch RSS grow on first touch</a></li><li><a href="#where-this-matters-in-practice">Where this matters in practice</a></li></ol></aside>
 <article class="prose">
 <h2 id="two-kinds-of-address">Two kinds of address</h2>
@@ -298,7 +299,7 @@ munmap(0x7fd6d01ff000, 268439552)       = 0</code></pre>
 <div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
 </div></footer>
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
-<script src="../script.js?v=20261120" defer></script>
+<script src="../script.js?v=20261122" defer></script>
 <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
 </body>
 </html>

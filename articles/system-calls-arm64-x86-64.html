@@ -7,11 +7,12 @@
 <link rel="canonical" href="https://lowlevellabs.in/articles/system-calls-arm64-x86-64.html">
 <meta property="og:title" content="How System Calls Work on Arm64 and x86-64"><meta property="og:description" content="Step by step, how a Linux system call crosses from user space into the kernel and back on AArch64 (svc) and x86-64 (syscall): registers, privilege switch, kernel entry, the syscall table, return, errors and the vDSO.">
 <meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/system-calls-arm64-x86-64.html">
+<meta property="og:image" content="https://lowlevellabs.in/assets/covers/system-calls-arm64-x86-64.png"><meta property="og:image:width" content="1600"><meta property="og:image:height" content="840"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://lowlevellabs.in/assets/covers/system-calls-arm64-x86-64.png">
 <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../styles.css?v=20261120">
+<link rel="stylesheet" href="../styles.css?v=20261122">
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "How System Calls Work on Arm64 and x86-64", "description": "Step by step, how a Linux system call crosses from user space into the kernel and back on AArch64 (svc) and x86-64 (syscall): registers, privilege switch, kernel entry, the syscall table, return, errors and the vDSO.", "datePublished": "2026-11-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
 </head>
 <body>
@@ -28,7 +29,7 @@
 <h1>How System Calls Work on Arm64 and x86-64</h1>
 <p class="lede">Every time a program opens a file, sends a packet or allocates memory, it asks the kernel through a system call. That request crosses a hardware privilege boundary, and the CPU and kernel follow a precise sequence to do it safely. Here is that sequence, step by step, on Arm and x86.</p>
 <div class="byline"><span>15 min read</span><span>22 Nov 2026</span></div>
-</div></header>
+<figure class="article-cover"><img src="../assets/covers/system-calls-arm64-x86-64.png" width="1600" height="840" alt="Cover diagram: How System Calls Work on Arm64 and x86-64" fetchpriority="high"></figure></div></header>
 <div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#why-programs-can-t-just-call-the-kernel">Why programs can&#x27;t just call the kernel</a></li><li><a href="#the-whole-journey-in-seven-steps">The whole journey in seven steps</a></li><li><a href="#step-1-the-calling-convention-for-system-calls">Step 1: the calling convention for system calls</a></li><li><a href="#steps-1-2-in-assembly-a-raw-system-call">Steps 1–2 in assembly: a raw system call</a></li><li><a href="#step-3-on-arm64-what-the-cpu-does-on-svc">Step 3 on Arm64: what the CPU does on svc</a></li><li><a href="#step-3-on-x86-64-what-the-cpu-does-on-syscall">Step 3 on x86-64: what the CPU does on syscall</a></li><li><a href="#step-4-kernel-entry-saving-the-user-s-state">Step 4: kernel entry, saving the user&#x27;s state</a></li><li><a href="#step-5-dispatching-through-the-system-call-table">Step 5: dispatching through the system call table</a></li><li><a href="#step-6-the-handler-does-the-work">Step 6: the handler does the work</a></li><li><a href="#step-7-the-return-path">Step 7: the return path</a></li><li><a href="#errors-how-ebadf-becomes-errno">Errors: how -EBADF becomes errno</a></li><li><a href="#faster-than-a-trap-the-vdso">Faster than a trap: the vDSO</a></li><li><a href="#arm64-and-x86-64-side-by-side">Arm64 and x86-64 side by side</a></li><li><a href="#what-a-system-call-costs">What a system call costs</a></li><li><a href="#watch-it-yourself">Watch it yourself</a></li></ol></aside>
 <article class="prose">
 <h2 id="why-programs-can-t-just-call-the-kernel">Why programs can't just call the kernel</h2>
@@ -365,7 +366,7 @@ sudo perf trace -s -- sleep 1           # low-overhead alternative to strace</co
 <div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
 </div></footer>
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
-<script src="../script.js?v=20261120" defer></script>
+<script src="../script.js?v=20261122" defer></script>
 <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
 </body>
 </html>
