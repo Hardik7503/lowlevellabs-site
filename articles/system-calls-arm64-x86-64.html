@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How System Calls Work on Arm64 and x86-64 | LowLevel Labs</title>
+<meta name="description" content="Step by step, how a Linux system call crosses from user space into the kernel and back on AArch64 (svc) and x86-64 (syscall): registers, privilege switch, kernel entry, the syscall table, return, errors and the vDSO.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/system-calls-arm64-x86-64.html">
+<meta property="og:title" content="How System Calls Work on Arm64 and x86-64"><meta property="og:description" content="Step by step, how a Linux system call crosses from user space into the kernel and back on AArch64 (svc) and x86-64 (syscall): registers, privilege switch, kernel entry, the syscall table, return, errors and the vDSO.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/system-calls-arm64-x86-64.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "How System Calls Work on Arm64 and x86-64", "description": "Step by step, how a Linux system call crosses from user space into the kernel and back on AArch64 (svc) and x86-64 (syscall): registers, privilege switch, kernel entry, the syscall table, return, errors and the vDSO.", "datePublished": "2026-11-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/linux.html">Linux systems</a></div>
+<h1>How System Calls Work on Arm64 and x86-64</h1>
+<p class="lede">Every time a program opens a file, sends a packet or allocates memory, it asks the kernel through a system call. That request crosses a hardware privilege boundary, and the CPU and kernel follow a precise sequence to do it safely. Here is that sequence, step by step, on Arm and x86.</p>
+<div class="byline"><span>15 min read</span><span>22 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#why-programs-can-t-just-call-the-kernel">Why programs can&#x27;t just call the kernel</a></li><li><a href="#the-whole-journey-in-seven-steps">The whole journey in seven steps</a></li><li><a href="#step-1-the-calling-convention-for-system-calls">Step 1: the calling convention for system calls</a></li><li><a href="#steps-1-2-in-assembly-a-raw-system-call">Steps 1–2 in assembly: a raw system call</a></li><li><a href="#step-3-on-arm64-what-the-cpu-does-on-svc">Step 3 on Arm64: what the CPU does on svc</a></li><li><a href="#step-3-on-x86-64-what-the-cpu-does-on-syscall">Step 3 on x86-64: what the CPU does on syscall</a></li><li><a href="#step-4-kernel-entry-saving-the-user-s-state">Step 4: kernel entry, saving the user&#x27;s state</a></li><li><a href="#step-5-dispatching-through-the-system-call-table">Step 5: dispatching through the system call table</a></li><li><a href="#step-6-the-handler-does-the-work">Step 6: the handler does the work</a></li><li><a href="#step-7-the-return-path">Step 7: the return path</a></li><li><a href="#errors-how-ebadf-becomes-errno">Errors: how -EBADF becomes errno</a></li><li><a href="#faster-than-a-trap-the-vdso">Faster than a trap: the vDSO</a></li><li><a href="#arm64-and-x86-64-side-by-side">Arm64 and x86-64 side by side</a></li><li><a href="#what-a-system-call-costs">What a system call costs</a></li><li><a href="#watch-it-yourself">Watch it yourself</a></li></ol></aside>
+<article class="prose">
+<h2 id="why-programs-can-t-just-call-the-kernel">Why programs can't just call the kernel</h2>
+<p>A user program and the kernel run at different <strong>privilege levels</strong>. The CPU enforces the difference in hardware:</p>
+<ul>
+<li>User code runs at <strong>EL0</strong> on Arm64 or <strong>ring 3</strong> on x86. It cannot touch device registers, page tables, or kernel memory.</li>
+<li>The kernel runs at <strong>EL1</strong> on Arm64 or <strong>ring 0</strong> on x86, with full control of the machine.</li>
+</ul>
+<p>If user code could simply jump into kernel code, it could jump into the middle of any function and skip every permission check. So the CPU provides exactly one controlled doorway: a special instruction that switches to kernel mode <em>and</em> jumps to an address the kernel chose in advance. On Arm64 that instruction is <code>svc</code> (supervisor call). On x86-64 it is <code>syscall</code>.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 270" role="img" aria-label="User space at EL0 or ring 3 above a privilege boundary; the svc or syscall instruction is the only door into the kernel at EL1 or ring 0, which then returns with eret or sysret">
+<rect class="sg" x="20" y="16" width="640" height="96" rx="8"/><text class="h" x="36" y="40">User space</text><text class="m s" x="36" y="60">EL0 (Arm64) · ring 3 (x86-64)</text>
+<rect class="b" x="36" y="72" width="180" height="30" rx="4"/><text class="m s" x="46" y="92">your program</text>
+<rect class="b" x="236" y="72" width="180" height="30" rx="4"/><text class="m s" x="246" y="92">libc: write()</text>
+<path class="ln dash" d="M20 132h640"/><text class="s" x="490" y="126">hardware privilege boundary</text>
+<rect class="cu" x="20" y="152" width="640" height="100" rx="8"/><text class="h" x="36" y="176">Kernel</text><text class="m s" x="36" y="196">EL1 (Arm64) · ring 0 (x86-64)</text>
+<rect class="b" x="36" y="208" width="190" height="30" rx="4"/><text class="m s" x="46" y="228">entry code (asm)</text>
+<rect class="b" x="246" y="208" width="190" height="30" rx="4"/><text class="m s" x="256" y="228">syscall table</text>
+<rect class="b" x="456" y="208" width="190" height="30" rx="4"/><text class="m s" x="466" y="228">ksys_write()</text>
+<path class="lc" d="M326 102v106"/><text class="s tc h" x="334" y="146">svc #0 / syscall</text>
+<path class="ls" d="M560 208V102"/><text class="s ts h" x="568" y="146">eret / sysretq</text>
+</svg><figcaption>The trap instruction is the only way into the kernel. The return instruction is the only way back. The kernel decides where the door leads, not the program.</figcaption></figure>
+
+<h2 id="the-whole-journey-in-seven-steps">The whole journey in seven steps</h2>
+<p>Take one line of C, <code>write(1, "hi\n", 3);</code>. Whatever the architecture, it goes through the same seven steps:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 420" role="img" aria-label="Seven steps of a system call: libc wrapper loads registers, trap instruction, CPU hardware switch, kernel entry saves registers, dispatch through syscall table, the handler runs, return path restores and returns">
+<g transform="translate(20,10)">
+<rect class="sg" x="0" y="0" width="420" height="48" rx="6"/><text class="h" x="14" y="21">1. libc wrapper loads registers</text><text class="s" x="14" y="39">syscall number + up to 6 arguments</text>
+<rect class="sg" x="0" y="58" width="420" height="48" rx="6"/><text class="h" x="14" y="79">2. Trap instruction</text><text class="m s" x="14" y="97">svc #0 (Arm64) · syscall (x86-64)</text>
+<rect class="wn" x="0" y="116" width="420" height="48" rx="6"/><text class="h" x="14" y="137">3. CPU hardware switches privilege</text><text class="s" x="14" y="155">saves return address and flags, jumps to kernel entry</text>
+<rect class="cu" x="0" y="174" width="420" height="48" rx="6"/><text class="h" x="14" y="195">4. Kernel entry code</text><text class="s" x="14" y="213">switch stack, save all user registers (pt_regs)</text>
+<rect class="cu" x="0" y="232" width="420" height="48" rx="6"/><text class="h" x="14" y="253">5. Dispatch</text><text class="s" x="14" y="271">check number, sys_call_table[nr](regs)</text>
+<rect class="cu" x="0" y="290" width="420" height="48" rx="6"/><text class="h" x="14" y="311">6. The handler does the work</text><text class="s" x="14" y="329">validate args, copy_from_user, call VFS / driver</text>
+<rect class="ink" x="0" y="348" width="420" height="48" rx="6"/><text class="h" x="14" y="369">7. Return path</text><text class="s" x="14" y="387">result in x0 / rax, signals, restore, eret / sysret</text>
+</g>
+<text class="s" x="470" y="40">user space</text><path class="ln" d="M460 14v96"/>
+<text class="s" x="470" y="146">hardware</text><path class="ln" d="M460 126v48"/>
+<text class="s" x="470" y="300">kernel</text><path class="ln" d="M460 184v222"/>
+</svg><figcaption>The seven steps of every Linux system call. The rest of this article walks through each one, first on Arm64 and then on x86-64.</figcaption></figure>
+
+<h2 id="step-1-the-calling-convention-for-system-calls">Step 1: the calling convention for system calls</h2>
+<p>The kernel needs two things from the program: <em>which</em> service it wants (the <strong>system call number</strong>) and the <strong>arguments</strong>. Both travel in CPU registers. Each architecture defines which registers, and the convention is <em>not</em> the same as for ordinary function calls (compare <a href="calling-conventions-aarch64-x86-64.html">Calling Conventions</a>).</p>
+<table>
+<thead><tr><th></th><th>Arm64 (AArch64)</th><th>Arm 32-bit (EABI)</th><th>x86-64</th><th>x86 32-bit</th></tr></thead>
+<tbody>
+<tr><td>Trap instruction</td><td><code>svc #0</code></td><td><code>svc #0</code></td><td><code>syscall</code></td><td><code>int $0x80</code></td></tr>
+<tr><td>Syscall number</td><td><code>x8</code></td><td><code>r7</code></td><td><code>rax</code></td><td><code>eax</code></td></tr>
+<tr><td>Arguments 1–6</td><td><code>x0</code>–<code>x5</code></td><td><code>r0</code>–<code>r5</code></td><td><code>rdi, rsi, rdx, r10, r8, r9</code></td><td><code>ebx, ecx, edx, esi, edi, ebp</code></td></tr>
+<tr><td>Return value</td><td><code>x0</code></td><td><code>r0</code></td><td><code>rax</code></td><td><code>eax</code></td></tr>
+<tr><td>Registers destroyed by the trap</td><td>none (all restored)</td><td>none</td><td><code>rcx</code>, <code>r11</code></td><td>none</td></tr>
+<tr><td><code>write</code> is number</td><td>64</td><td>4</td><td>1</td><td>4</td></tr>
+</tbody>
+</table>
+<p>Two details worth noticing:</p>
+<ul>
+<li>On x86-64 the fourth argument goes in <code>r10</code>, not <code>rcx</code> as in a normal function call. That is because the <code>syscall</code> instruction itself overwrites <code>rcx</code> (step 3 explains why).</li>
+<li><strong>System call numbers differ per architecture.</strong> <code>write</code> is 64 on Arm64 but 1 on x86-64. Arm64 uses the "generic" numbering shared by newer architectures such as RISC-V. Never hard-code a number; use the <code>__NR_write</code> constant from <code>&lt;asm/unistd.h&gt;</code> or <code>SYS_write</code> from <code>&lt;sys/syscall.h&gt;</code>.</li>
+</ul>
+
+<h3>What libc does</h3>
+<p>You almost never write the trap yourself. The C library wrapper puts arguments in the right registers, executes the trap, and converts the result:</p>
+<pre><code class="language-c">#include &lt;unistd.h&gt;
+#include &lt;sys/syscall.h&gt;
+
+write(1, "hi\n", 3);                       /* libc wrapper                    */
+syscall(SYS_write, 1, "hi\n", 3);          /* generic wrapper, any number      */</code></pre>
+<h2 id="steps-1-2-in-assembly-a-raw-system-call">Steps 1–2 in assembly: a raw system call</h2>
+<p>This program calls <code>write</code> and <code>exit</code> directly with no C library. It assembles and runs on any 64-bit Arm Linux system:</p>
+<pre><code class="language-armasm">// hello-arm64.S   build: gcc -nostdlib -static hello-arm64.S -o hello
+    .data
+msg:    .ascii  "hi\n"
+len = . - msg
+
+    .text
+    .global _start
+_start:
+    mov     x0, #1              // arg1: fd = 1 (stdout)
+    ldr     x1, =msg            // arg2: buffer address (from literal pool)
+    mov     x2, #len            // arg3: byte count
+    mov     x8, #64             // syscall number: __NR_write on arm64
+    svc     #0                  // trap into the kernel; result comes back in x0
+
+    mov     x0, #0              // arg1: exit status
+    mov     x8, #93             // __NR_exit
+    svc     #0</code></pre>
+<p>The same program on x86-64. Note the different numbers and registers:</p>
+<pre><code class="language-x86asm"># hello-x86_64.S   build: gcc -nostdlib -static hello-x86_64.S -o hello
+    .intel_syntax noprefix
+    .data
+msg:    .ascii  "hi\n"
+len = . - msg
+
+    .text
+    .global _start
+_start:
+    mov     edi, 1              # arg1: fd = 1   (writing edi zero-extends rdi)
+    lea     rsi, [rip + msg]    # arg2: buffer address
+    mov     edx, len            # arg3: byte count
+    mov     eax, 1              # syscall number: __NR_write on x86-64
+    syscall                     # trap; result in rax; rcx and r11 are overwritten
+
+    xor     edi, edi            # arg1: exit status 0
+    mov     eax, 60             # __NR_exit
+    syscall</code></pre>
+<p>The immediate in <code>svc #0</code> is ignored by Linux on Arm64. The number comes from <code>x8</code>; the <code>#0</code> is only a convention.</p>
+
+<h2 id="step-3-on-arm64-what-the-cpu-does-on-svc">Step 3 on Arm64: what the CPU does on svc</h2>
+<p>When the CPU executes <code>svc</code> at EL0, the hardware, not software, performs these actions in one indivisible step:</p>
+<ol>
+<li>Saves the address of the instruction <em>after</em> <code>svc</code> into <code>ELR_EL1</code> (Exception Link Register), so the kernel knows where to return.</li>
+<li>Saves the current processor state (condition flags, interrupt masks, current EL) into <code>SPSR_EL1</code> (Saved Program Status Register).</li>
+<li>Records <em>why</em> the exception happened in <code>ESR_EL1</code> (Exception Syndrome Register). For an <code>svc</code> from AArch64, the exception class field is <code>0x15</code>, and the low bits hold the <code>svc</code> immediate.</li>
+<li>Switches to EL1, masks interrupts, and selects the EL1 stack pointer <code>SP_EL1</code>.</li>
+<li>Jumps to the kernel's <strong>exception vector table</strong> at <code>VBAR_EL1 + 0x400</code>, the slot for "synchronous exception from a lower EL running AArch64".</li>
+</ol>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 300" role="img" aria-label="Arm64 svc: hardware writes ELR_EL1, SPSR_EL1 and ESR_EL1, switches to EL1 and SP_EL1, and branches to VBAR_EL1 plus 0x400 in the exception vector table">
+<rect class="sg" x="20" y="20" width="200" height="110" rx="6"/><text class="h" x="36" y="44">EL0 (user)</text>
+<text class="m s" x="36" y="70">pc   = 0x4000b0</text><text class="m s" x="36" y="90">svc  #0</text><text class="m s" x="36" y="110">x8 = 64, x0..x2 = args</text>
+<path class="lc" d="M220 75h60"/>
+<rect class="wn" x="280" y="20" width="200" height="110" rx="6"/><text class="h" x="296" y="44">Hardware saves</text>
+<text class="m s" x="296" y="70">ELR_EL1  = 0x4000b4</text><text class="m s" x="296" y="90">SPSR_EL1 = PSTATE</text><text class="m s" x="296" y="110">ESR_EL1  = EC 0x15</text>
+<path class="lc" d="M480 75h40"/>
+<rect class="cu" x="520" y="20" width="140" height="110" rx="6"/><text class="h" x="536" y="44">EL1</text><text class="s" x="536" y="66">interrupts masked</text><text class="s" x="536" y="86">SP = SP_EL1</text><text class="m s" x="536" y="110">pc = VBAR+0x400</text>
+<g transform="translate(160,160)">
+<text class="h" x="0" y="0">Exception vector table at VBAR_EL1 (each slot 0x80 bytes)</text>
+<rect class="b" x="0" y="12" width="100" height="56"/><text class="m s" x="8" y="34">+0x000</text><text class="s" x="8" y="54">cur. EL, SP0</text>
+<rect class="b" x="100" y="12" width="100" height="56"/><text class="m s" x="108" y="34">+0x200</text><text class="s" x="108" y="54">cur. EL, SPx</text>
+<rect class="cu" x="200" y="12" width="100" height="56"/><text class="m s" x="208" y="34">+0x400</text><text class="s" x="208" y="54">lower EL, A64</text>
+<rect class="b" x="300" y="12" width="100" height="56"/><text class="m s" x="308" y="34">+0x600</text><text class="s" x="308" y="54">lower EL, A32</text>
+<text class="s" x="0" y="92">Each group has four entries: Synchronous, IRQ, FIQ, SError. svc is synchronous.</text>
+<text class="s" x="0" y="110">Linux names the +0x400 entry el0t_64_sync.</text>
+</g>
+</svg><figcaption>On <code>svc</code>, the Arm64 core saves the return address, state and cause into EL1 system registers and branches to a fixed slot in the kernel's vector table.</figcaption></figure>
+<p>Because the return address and state are saved in <em>registers</em>, the hardware has not touched memory or the stack yet. The kernel's entry code does that next.</p>
+
+<h2 id="step-3-on-x86-64-what-the-cpu-does-on-syscall">Step 3 on x86-64: what the CPU does on syscall</h2>
+<p>The x86-64 <code>syscall</code> instruction was designed to be fast, so it does as little as possible. The kernel configured three model-specific registers (MSRs) at boot, and the CPU uses them:</p>
+<ol>
+<li>Saves the return address (the instruction after <code>syscall</code>) into <strong><code>rcx</code></strong>.</li>
+<li>Saves the flags register <code>RFLAGS</code> into <strong><code>r11</code></strong>.</li>
+<li>Clears the flag bits listed in <code>IA32_FMASK</code>; Linux uses it to disable interrupts and clear the direction and trap flags.</li>
+<li>Loads the kernel code and stack segment selectors from <code>IA32_STAR</code>, which switches the CPU to ring 0.</li>
+<li>Jumps to the address in <code>IA32_LSTAR</code>, which Linux sets to its entry routine <code>entry_SYSCALL_64</code>.</li>
+</ol>
+<p>Notice what it does <strong>not</strong> do: it does not switch the stack. <code>rsp</code> still points at the <em>user's</em> stack when the kernel's first instruction runs. The kernel must fix that immediately, and it cannot trust anything on the user stack.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 210" role="img" aria-label="x86-64 syscall: RIP saved to RCX, RFLAGS saved to R11, flags masked by FMASK, CS and SS loaded from STAR, RIP loaded from LSTAR; RSP still points to user stack">
+<rect class="sg" x="20" y="20" width="190" height="100" rx="6"/><text class="h" x="36" y="44">ring 3 (user)</text><text class="m s" x="36" y="70">rax = 1 (write)</text><text class="m s" x="36" y="90">rdi, rsi, rdx = args</text><text class="m s" x="36" y="110">syscall</text>
+<path class="lc" d="M210 70h50"/>
+<rect class="wn" x="260" y="20" width="220" height="100" rx="6"/><text class="h" x="276" y="44">Hardware</text><text class="m s" x="276" y="66">rcx    ← user rip</text><text class="m s" x="276" y="84">r11    ← rflags</text><text class="m s" x="276" y="102">rflags &amp;= ~FMASK</text>
+<path class="lc" d="M480 70h40"/>
+<rect class="cu" x="520" y="20" width="140" height="100" rx="6"/><text class="h" x="536" y="44">ring 0</text><text class="m s" x="536" y="68">CS, SS ← STAR</text><text class="m s" x="536" y="88">rip ← LSTAR</text>
+<rect class="b" x="260" y="140" width="400" height="50" rx="6" style="stroke:var(--warn)"/><text class="s" x="276" y="162">rsp is still the user stack: the kernel's first job</text><text class="s" x="276" y="180">is to switch to its own per-thread kernel stack.</text>
+</svg><figcaption>The <code>syscall</code> instruction saves only RIP and RFLAGS, in registers, and does not touch the stack. That is why <code>rcx</code> and <code>r11</code> are destroyed by every system call.</figcaption></figure>
+
+<h2 id="step-4-kernel-entry-saving-the-user-s-state">Step 4: kernel entry, saving the user's state</h2>
+<p>The kernel will run C code that freely uses registers. Before it does, it must save every user register so it can restore them exactly on return. Linux saves them in a structure called <strong><code>struct pt_regs</code></strong> at the top of the current thread's kernel stack. Every thread has its own kernel stack, typically 16 KB.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 280" role="img" aria-label="Per-thread kernel stack with pt_regs frame at the top containing all user registers, saved pc and flags, and the original syscall number; kernel C code runs below it">
+<g transform="translate(40,20)">
+<text class="s" x="0" y="-4">top of this thread's kernel stack</text>
+<rect class="cu" x="0" y="4" width="280" height="150"/><text class="h" x="14" y="28">struct pt_regs</text>
+<text class="m s" x="14" y="52">x0 … x30  /  rax … r15</text>
+<text class="m s" x="14" y="74">sp (user stack pointer)</text>
+<text class="m s" x="14" y="96">pc (from ELR_EL1 / rcx)</text>
+<text class="m s" x="14" y="118">pstate (SPSR_EL1 / r11)</text>
+<text class="m s" x="14" y="140">orig_x0 / orig_ax, syscallno</text>
+<rect class="b" x="0" y="154" width="280" height="80" style="stroke-dasharray:4 4"/><text class="s" x="14" y="190">kernel C call frames grow down</text><text class="s" x="14" y="208">(do_el0_svc, ksys_write …)</text>
+</g>
+<g transform="translate(360,30)">
+<text class="h" x="0" y="0">Why save everything?</text>
+<text class="s" x="0" y="26">The return path rebuilds the exact user state</text>
+<text class="s" x="0" y="44">from pt_regs. Only the return-value register</text>
+<text class="s" x="0" y="62">changes.</text>
+<text class="s" x="0" y="96">The same frame is what strace and debuggers</text>
+<text class="s" x="0" y="114">read through ptrace, what signal delivery</text>
+<text class="s" x="0" y="132">edits to run a handler, and what the</text>
+<text class="s" x="0" y="150">kernel prints in a crash dump.</text>
+</g>
+</svg><figcaption><code>pt_regs</code> is the snapshot of user state. Kernel C code runs on the same stack, below it.</figcaption></figure>
+<h3>Arm64 entry</h3>
+<p>The vector at <code>VBAR_EL1 + 0x400</code> branches to <code>el0t_64_sync</code> in <code>arch/arm64/kernel/entry.S</code>. Its <code>kernel_entry</code> macro stores <code>x0</code>–<code>x30</code>, the user <code>SP_EL0</code>, <code>ELR_EL1</code> and <code>SPSR_EL1</code> into <code>pt_regs</code>. The C handler then reads <code>ESR_EL1</code> to learn the cause and, for exception class <code>0x15</code>, calls the system call path. Simplified, in recent kernels:</p>
+<pre><code class="language-text">el0t_64_sync                 (entry.S: save registers into pt_regs)
+ └─ el0t_64_sync_handler     (entry-common.c: read ESR_EL1, switch on class)
+     └─ el0_svc
+         └─ do_el0_svc
+             └─ el0_svc_common   (tracing, seccomp, then:)
+                 └─ invoke_syscall(regs, regs-&gt;regs[8], ...)
+                     └─ sys_call_table[nr](regs)   → __arm64_sys_write</code></pre>
+<h3>x86-64 entry</h3>
+<p><code>entry_SYSCALL_64</code> in <code>arch/x86/entry/entry_64.S</code> must do the stack switch by hand, using only the few registers it may touch:</p>
+<pre><code class="language-x86asm">entry_SYSCALL_64:
+    swapgs                                   ; GS base now points at this CPU's per-CPU data
+    mov   QWORD PTR gs:[cpu_tss_rw+...], rsp ; stash the user rsp in per-CPU scratch
+    mov   rsp, QWORD PTR gs:[pcpu_hot+...]   ; load this thread's kernel stack top
+    push  __USER_DS                          ; build pt_regs: ss
+    push  QWORD PTR gs:[...]                 ;               user rsp
+    push  r11                                ;               rflags
+    push  __USER_CS                          ;               cs
+    push  rcx                                ;               rip
+    push  rax                                ;               orig_ax (syscall nr)
+    ; ... push the remaining general registers ...
+    call  do_syscall_64                      ; C code: dispatch</code></pre>
+<p>(Abridged; the real code also handles page-table isolation and speculative-execution mitigations. Symbol names change between kernel versions.)</p>
+<p><code>swapgs</code> is the trick that makes this possible: it swaps the user's GS base with a kernel value stored in an MSR, giving the entry code a pointer to per-CPU data without using any general-purpose register.</p>
+
+<h2 id="step-5-dispatching-through-the-system-call-table">Step 5: dispatching through the system call table</h2>
+<p>The kernel has an array of function pointers, <code>sys_call_table</code>, indexed by system call number. Dispatch is essentially:</p>
+<pre><code class="language-c">/* Simplified from arch/arm64/kernel/syscall.c and arch/x86/entry/common.c */
+if (nr &lt; NR_syscalls) {
+    nr = array_index_nospec(nr, NR_syscalls);   /* block Spectre-style out-of-bounds speculation */
+    regs-&gt;ret = sys_call_table[nr](regs);       /* x0 on arm64, ax on x86-64 */
+} else {
+    regs-&gt;ret = -ENOSYS;                         /* no such system call */
+}</code></pre>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 246" role="img" aria-label="Syscall number from x8 or rax indexes sys_call_table; entry 64 on arm64 or entry 1 on x86-64 points to the write handler">
+<rect class="wn" x="20" y="80" width="150" height="56" rx="6"/><text class="h" x="36" y="104">nr from</text><text class="m s" x="36" y="124">x8 / orig_ax</text>
+<path class="lc" d="M170 108h60"/>
+<g transform="translate(230,20)">
+<text class="h" x="0" y="-4">sys_call_table[]</text>
+<rect class="b" x="0" y="4" width="200" height="30"/><text class="m s" x="10" y="24">[0]  read / io_setup</text>
+<rect class="cu" x="0" y="34" width="200" height="30"/><text class="m s" x="10" y="54">[1]  write   (x86-64)</text>
+<rect class="b" x="0" y="64" width="200" height="30"/><text class="m s" x="10" y="84">…</text>
+<rect class="cu" x="0" y="94" width="200" height="30"/><text class="m s" x="10" y="114">[64] write   (arm64)</text>
+<rect class="b" x="0" y="124" width="200" height="30"/><text class="m s" x="10" y="144">…</text>
+<rect class="b" x="0" y="154" width="200" height="30"/><text class="m s" x="10" y="174">[NR_syscalls-1]</text>
+</g>
+<path class="lc" d="M430 69h40M430 129c20 0 20-50 40-50"/>
+<rect class="sg" x="470" y="50" width="190" height="56" rx="6"/><text class="h" x="486" y="74">sys_write wrapper</text><text class="m s" x="486" y="94">→ ksys_write()</text>
+<text class="s" x="20" y="236">Each architecture has its own table and numbering, but the entries lead to the same generic handler.</text>
+</svg><figcaption>The system call number is just an index into a table of handler pointers. Out-of-range numbers return <code>-ENOSYS</code>.</figcaption></figure>
+<p>Before dispatch, the common entry path also handles <strong>seccomp</strong> (sandbox filters that can block or fail specific system calls, used by browsers and containers), <strong>ptrace</strong> (what lets <code>strace</code> stop the process at each call), and audit and tracepoints.</p>
+<p>Handlers are written once with the <code>SYSCALL_DEFINEn</code> macro, which generates an architecture wrapper that pulls the arguments out of <code>pt_regs</code>:</p>
+<pre><code class="language-c">/* fs/read_write.c */
+SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf, size_t, count)
+{
+    return ksys_write(fd, buf, count);
+}</code></pre>
+<h2 id="step-6-the-handler-does-the-work">Step 6: the handler does the work</h2>
+<p>The handler is ordinary kernel C running in <strong>process context</strong> on behalf of the calling thread, so it may sleep (see <a href="interrupt-context-vs-process-context.html">Kernel Contexts</a>). For <code>write</code>:</p>
+<ol>
+<li>Look up file descriptor 1 in the process's file table to get a <code>struct file</code>.</li>
+<li>Check the file was opened for writing.</li>
+<li>Call the file's <code>write</code> operation: the terminal driver, a pipe, a filesystem, or your own driver (see <a href="linux-character-device-read-write.html">From open() to read()</a>).</li>
+<li>That code copies the data with <code>copy_from_user()</code>, never by dereferencing the user pointer directly.</li>
+</ol>
+<div class="pitfall"><strong>Every argument is untrusted</strong>
+<p>A system call argument can be any value: a pointer into kernel memory, an enormous length, a negative descriptor. Handlers validate everything, and <code>copy_from_user()</code>/<code>copy_to_user()</code> refuse addresses outside user space and turn bad pointers into <code>-EFAULT</code> instead of a crash. Hardware helps too: Arm's PAN and x86's SMAP make the kernel fault if it touches user memory <em>outside</em> those helpers.</p></div>
+
+<h2 id="step-7-the-return-path">Step 7: the return path</h2>
+<p>When the handler returns, its result is stored in the saved return-value register in <code>pt_regs</code>. Before returning to user space, the kernel checks for pending work: a <strong>signal</strong> to deliver (which may redirect the return into a signal handler), a <strong>reschedule</strong> request (another thread should run first), and tracing hooks. Then it restores the registers from <code>pt_regs</code> and executes the return instruction.</p>
+<table>
+<thead><tr><th></th><th>Arm64</th><th>x86-64</th></tr></thead>
+<tbody>
+<tr><td>Return instruction</td><td><code>eret</code></td><td><code>sysretq</code> (fast path) or <code>iretq</code></td></tr>
+<tr><td>Where it returns to</td><td><code>ELR_EL1</code></td><td><code>rcx</code></td></tr>
+<tr><td>State restored from</td><td><code>SPSR_EL1</code></td><td><code>r11</code> (into RFLAGS)</td></tr>
+<tr><td>Stack restored</td><td>Hardware switches back to <code>SP_EL0</code></td><td>Kernel reloads user <code>rsp</code>, then <code>swapgs</code></td></tr>
+</tbody>
+</table>
+<p>On x86-64 the kernel uses the faster <code>sysretq</code> only when it is safe, for example when the return address is canonical; otherwise it falls back to the slower but fully general <code>iretq</code>. Execution resumes in user space at the instruction after the trap, with the result in <code>x0</code> or <code>rax</code>.</p>
+
+<h2 id="errors-how-ebadf-becomes-errno">Errors: how -EBADF becomes errno</h2>
+<p>The kernel returns errors as small negative numbers in the return register, for example <code>-9</code> for <code>-EBADF</code>. The libc wrapper checks for a value between -4095 and -1, stores the positive code in the thread-local <code>errno</code>, and returns -1 to your program:</p>
+<pre><code class="language-c">ssize_t n = write(42, "x", 1);    /* fd 42 isn't open */
+/* kernel returned -9 in x0/rax  →  libc: errno = EBADF (9), n = -1 */
+if (n &lt; 0)
+    perror("write");               /* "write: Bad file descriptor" */</code></pre>
+<h2 id="faster-than-a-trap-the-vdso">Faster than a trap: the vDSO</h2>
+<p>A few system calls only read information the kernel can safely share, such as the current time. For those, the kernel maps a small shared library called the <strong>vDSO</strong> (virtual dynamic shared object) into every process. <code>clock_gettime()</code> and <code>gettimeofday()</code> run entirely in user space, reading a kernel-updated data page and the CPU's counter, with no privilege switch at all.</p>
+<pre><code class="language-bash">$ cat /proc/self/maps | grep vdso
+7ffd4e7f2000-7ffd4e7f4000 r-xp 00000000 00:00 0    [vdso]</code></pre>
+<h2 id="arm64-and-x86-64-side-by-side">Arm64 and x86-64 side by side</h2>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 400" role="img" aria-label="Side-by-side timelines of a write system call on Arm64 and x86-64 from register setup through trap, entry, dispatch and return">
+<text class="h" x="20" y="22">Arm64</text><text class="h" x="360" y="22">x86-64</text>
+<g transform="translate(20,34)">
+<rect class="sg" x="0" y="0" width="300" height="40" rx="5"/><text class="m s" x="10" y="25">x8=64, x0=1, x1=buf, x2=3</text>
+<rect class="sg" x="0" y="50" width="300" height="40" rx="5"/><text class="m s" x="10" y="75">svc #0</text>
+<rect class="wn" x="0" y="100" width="300" height="40" rx="5"/><text class="m s" x="10" y="125">ELR/SPSR/ESR_EL1 ← state</text>
+<rect class="cu" x="0" y="150" width="300" height="40" rx="5"/><text class="m s" x="10" y="175">VBAR+0x400 → el0t_64_sync</text>
+<rect class="cu" x="0" y="200" width="300" height="40" rx="5"/><text class="m s" x="10" y="225">pt_regs saved on kernel stack</text>
+<rect class="cu" x="0" y="250" width="300" height="40" rx="5"/><text class="m s" x="10" y="275">invoke_syscall → table[64]</text>
+<rect class="ink" x="0" y="300" width="300" height="40" rx="5"/><text class="m s" x="10" y="325">restore, eret → x0 = 3</text>
+</g>
+<g transform="translate(360,34)">
+<rect class="sg" x="0" y="0" width="300" height="40" rx="5"/><text class="m s" x="10" y="25">rax=1, rdi=1, rsi=buf, rdx=3</text>
+<rect class="sg" x="0" y="50" width="300" height="40" rx="5"/><text class="m s" x="10" y="75">syscall</text>
+<rect class="wn" x="0" y="100" width="300" height="40" rx="5"/><text class="m s" x="10" y="125">rcx ← rip, r11 ← rflags</text>
+<rect class="cu" x="0" y="150" width="300" height="40" rx="5"/><text class="m s" x="10" y="175">LSTAR → entry_SYSCALL_64</text>
+<rect class="cu" x="0" y="200" width="300" height="40" rx="5"/><text class="m s" x="10" y="225">swapgs, switch rsp, pt_regs</text>
+<rect class="cu" x="0" y="250" width="300" height="40" rx="5"/><text class="m s" x="10" y="275">do_syscall_64 → table[1]</text>
+<rect class="ink" x="0" y="300" width="300" height="40" rx="5"/><text class="m s" x="10" y="325">restore, sysretq → rax = 3</text>
+</g>
+<text class="s" x="20" y="394">Same seven steps, different registers and instructions.</text>
+</svg><figcaption>A <code>write(1, buf, 3)</code> traced through both architectures.</figcaption></figure>
+<table>
+<thead><tr><th></th><th>Arm64</th><th>x86-64</th></tr></thead>
+<tbody>
+<tr><td>Privilege levels</td><td>EL0 → EL1</td><td>ring 3 → ring 0</td></tr>
+<tr><td>Entry address set by</td><td><code>VBAR_EL1</code> (vector table)</td><td><code>IA32_LSTAR</code> MSR</td></tr>
+<tr><td>Cause of entry</td><td>Read from <code>ESR_EL1</code> (shared vector for all synchronous exceptions)</td><td>Dedicated entry point used only by <code>syscall</code></td></tr>
+<tr><td>Return address saved in</td><td><code>ELR_EL1</code></td><td><code>rcx</code></td></tr>
+<tr><td>Flags saved in</td><td><code>SPSR_EL1</code></td><td><code>r11</code></td></tr>
+<tr><td>Kernel stack</td><td>Hardware selects <code>SP_EL1</code></td><td>Software switches <code>rsp</code> after <code>swapgs</code></td></tr>
+<tr><td>Registers clobbered for user</td><td>None (except <code>x0</code> result)</td><td><code>rcx</code>, <code>r11</code> (and <code>rax</code> result)</td></tr>
+<tr><td>Return</td><td><code>eret</code></td><td><code>sysretq</code> / <code>iretq</code></td></tr>
+<tr><td>Legacy 32-bit path</td><td>AArch32 <code>svc</code> (vector +0x600, number in <code>r7</code>)</td><td><code>int $0x80</code> or <code>sysenter</code> via the vDSO</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-a-system-call-costs">What a system call costs</h2>
+<p>A system call that does almost nothing (such as <code>getppid</code>) costs on the order of a hundred nanoseconds on a modern CPU, and noticeably more when security mitigations are active. Kernel page-table isolation (KPTI), added after the Meltdown vulnerability, switches page tables on every entry and exit on affected CPUs. The overhead is why high-performance code batches work: one <code>read</code> of 64 KB instead of 64,000 one-byte reads, <code>writev</code> for several buffers, and <code>io_uring</code> to submit many operations with few traps.</p>
+
+<h2 id="watch-it-yourself">Watch it yourself</h2>
+<pre><code class="language-bash">strace -e trace=write echo hi           # see each system call and its return value
+# write(1, "hi\n", 3)                    = 3
+
+strace -c ls &gt; /dev/null                # count calls and time per syscall
+
+ausyscall --dump | head                 # number ↔ name table for this architecture
+grep -w write /usr/include/asm*/unistd_64.h   # where the numbers come from (path varies)
+
+sudo perf trace -s -- sleep 1           # low-overhead alternative to strace</code></pre>
+<p>Single-stepping the trap instruction in GDB also shows the hardware at work: step over <code>svc</code> or <code>syscall</code> and the registers change exactly as described, with only <code>x0</code>, or <code>rax</code>, <code>rcx</code> and <code>r11</code>, different afterwards.</p>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>A system call is a controlled privilege switch. User code puts a number and arguments in registers and executes <code>svc</code> or <code>syscall</code>. The CPU saves the return point and flags (in <code>ELR_EL1</code>/<code>SPSR_EL1</code> or <code>rcx</code>/<code>r11</code>) and jumps to an entry point the kernel set up. The kernel saves the user registers in <code>pt_regs</code>, dispatches through <code>sys_call_table</code>, runs the handler with every argument treated as untrusted, then restores the registers and returns with <code>eret</code> or <code>sysretq</code>, the result in <code>x0</code> or <code>rax</code>.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn next" href="gdbus-architecture-programming-guide.html"><small>Next in Linux systems</small><span>GDBus Architecture &amp; Programming Guide</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>
