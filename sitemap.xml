@@ -31,6 +31,8 @@
 <url><loc>https://lowlevellabs.in/articles/interrupt-context-vs-process-context.html</loc><lastmod>2026-11-20</lastmod></url>
 <url><loc>https://lowlevellabs.in/articles/linux-kernel-locking-spinlock-mutex.html</loc><lastmod>2026-11-20</lastmod></url>
 <url><loc>https://lowlevellabs.in/articles/system-calls-arm64-x86-64.html</loc><lastmod>2026-11-22</lastmod></url>
+<url><loc>https://lowlevellabs.in/articles/kernel-user-split-shared-memory.html</loc><lastmod>2026-11-22</lastmod></url>
+<url><loc>https://lowlevellabs.in/articles/virtual-physical-memory-buddy-slab.html</loc><lastmod>2026-11-22</lastmod></url>
 <url><loc>https://lowlevellabs.in/articles/gdbus-architecture-programming-guide.html</loc><lastmod>2026-10-22</lastmod></url>
 <url><loc>https://lowlevellabs.in/articles/linux-dbus-architecture-engineering-guide.html</loc><lastmod>2026-10-22</lastmod></url>
 <url><loc>https://lowlevellabs.in/</loc><lastmod>2026-11-22</lastmod></url>

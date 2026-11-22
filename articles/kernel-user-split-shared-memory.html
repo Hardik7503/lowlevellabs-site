@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory | LowLevel Labs</title>
+<meta name="description" content="Why 32-bit Linux gives each process 3 GB of user space and 1 GB of kernel space, how 64-bit changes it, how page tables keep processes apart, and how the kernel lets separate processes share memory.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/kernel-user-split-shared-memory.html">
+<meta property="og:title" content="Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory"><meta property="og:description" content="Why 32-bit Linux gives each process 3 GB of user space and 1 GB of kernel space, how 64-bit changes it, how page tables keep processes apart, and how the kernel lets separate processes share memory.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/kernel-user-split-shared-memory.html">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261120">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory", "description": "Why 32-bit Linux gives each process 3 GB of user space and 1 GB of kernel space, how 64-bit changes it, how page tables keep processes apart, and how the kernel lets separate processes share memory.", "datePublished": "2026-11-22", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/linux.html">Linux systems</a></div>
+<h1>Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory</h1>
+<p class="lede">Every process on Linux believes it owns a huge address space. Part of it belongs to the program, and part is reserved for the kernel. Two processes can use the very same address and never see each other's data, yet with the kernel's help they can share memory on purpose. Here is how all three facts fit together.</p>
+<div class="byline"><span>14 min read</span><span>22 Nov 2026</span></div>
+</div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#one-address-space-two-regions">One address space, two regions</a></li><li><a href="#why-is-the-kernel-inside-every-process">Why is the kernel inside every process?</a></li><li><a href="#why-exactly-3-1">Why exactly 3:1?</a></li><li><a href="#on-64-bit-the-problem-disappears">On 64-bit, the problem disappears</a></li><li><a href="#how-processes-are-kept-apart">How processes are kept apart</a></li><li><a href="#sharing-on-purpose-the-kernel-maps-the-same-page-twice">Sharing on purpose: the kernel maps the same page twice</a></li><li><a href="#what-the-kernel-does-at-each-step">What the kernel does at each step</a></li><li><a href="#other-ways-the-kernel-shares-memory">Other ways the kernel shares memory</a></li><li><a href="#see-it-on-your-system">See it on your system</a></li></ol></aside>
+<article class="prose">
+<h2 id="one-address-space-two-regions">One address space, two regions</h2>
+<p>Each process gets its own <strong>virtual address space</strong>: a range of addresses it can use, from 0 up to the architecture's limit. On a 32-bit CPU, addresses are 32 bits wide, so the range is 2<sup>32</sup> bytes, 4 GB.</p>
+<p>Linux divides that 4 GB into two parts:</p>
+<ul>
+<li><strong>User space</strong>: the lower part, where the program's code, data, heap, stack and libraries live. The program can access it directly.</li>
+<li><strong>Kernel space</strong>: the upper part, where the kernel's code and data are mapped. The program can't touch it; any attempt causes a fault (a segmentation fault).</li>
+</ul>
+<p>On 32-bit x86 and 32-bit Arm, the default split is <strong>3 GB user, 1 GB kernel</strong>. That's the 3:1 ratio, often described as "1:3 kernel to user". The boundary sits at address <code>0xC0000000</code>, which the kernel calls <code>PAGE_OFFSET</code>.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 330" role="img" aria-label="32-bit virtual address space: 0 to 0xBFFFFFFF is 3 GB user space with code, data, heap, mmap area and stack; 0xC0000000 to 0xFFFFFFFF is 1 GB kernel space">
+<g transform="translate(60,20)">
+<rect class="cu" x="0" y="0" width="240" height="72"/><text class="h" x="14" y="30">Kernel space · 1 GB</text><text class="s" x="14" y="52">same in every process, EL1/ring 0 only</text>
+<rect class="sg" x="0" y="72" width="240" height="34"/><text class="s" x="14" y="94">stack ↓</text>
+<rect class="b" x="0" y="106" width="240" height="34" style="stroke-dasharray:4 4"/><text class="s" x="14" y="128">(unused gap)</text>
+<rect class="sg" x="0" y="140" width="240" height="34"/><text class="s" x="14" y="162">mmap area: shared libraries, mappings</text>
+<rect class="b" x="0" y="174" width="240" height="34" style="stroke-dasharray:4 4"/><text class="s" x="14" y="196">(unused gap)</text>
+<rect class="sg" x="0" y="208" width="240" height="34"/><text class="s" x="14" y="230">heap ↑ (malloc)</text>
+<rect class="sg" x="0" y="242" width="240" height="34"/><text class="s" x="14" y="264">code (.text), data, .bss</text>
+<text class="m s" x="250" y="6">0xFFFFFFFF</text>
+<text class="m s tc h" x="250" y="76">0xC0000000  PAGE_OFFSET</text>
+<text class="m s" x="250" y="280">0x00000000</text>
+<path class="ln" d="M-14 2v68"/><text class="s" x="-54" y="40">1 GB</text>
+<path class="ln" d="M-14 76v200"/><text class="s" x="-54" y="180">3 GB</text>
+</g>
+<g transform="translate(500,140)">
+<text class="h" x="0" y="0">Read it as:</text>
+<text class="s" x="0" y="24">Lower 3 GB: different in</text><text class="s" x="0" y="42">every process.</text>
+<text class="s" x="0" y="72">Upper 1 GB: the same kernel</text><text class="s" x="0" y="90">mappings in every process,</text><text class="s" x="0" y="108">protected from user access.</text>
+</g>
+</svg><figcaption>The default 32-bit Linux layout (<code>CONFIG_VMSPLIT_3G</code>). The user region changes on every context switch; the kernel region never does.</figcaption></figure>
+
+<h2 id="why-is-the-kernel-inside-every-process">Why is the kernel inside every process?</h2>
+<p>It might seem cleaner to give the kernel its own separate address space. Linux maps it into every process instead, for practical reasons:</p>
+<ol>
+<li><strong>System calls and interrupts are fast.</strong> When a program makes a system call or an interrupt arrives (see <a href="system-calls-arm64-x86-64.html">How System Calls Work</a>), the CPU only changes privilege level. The kernel's code and data are already mapped, so no page-table switch is needed, and the TLB entries stay valid.</li>
+<li><strong>The kernel can reach user memory directly.</strong> During <code>read()</code>, the kernel copies data straight into the caller's buffer with <code>copy_to_user()</code>, because the user's pages are mapped in the same address space at that moment.</li>
+<li><strong>One copy serves everyone.</strong> The kernel's mappings are identical in all processes, so the page tables for the kernel region are shared instead of being duplicated per process.</li>
+</ol>
+<p>Protection comes from the page-table entries, not from separation. Kernel pages are marked "supervisor only": the U/S bit on x86, the AP bits on Arm. A user-mode access to them faults, even though they're mapped.</p>
+<div class="note"><strong>Meltdown changed this a little</strong>
+<p>In 2018 the Meltdown vulnerability showed that some CPUs could leak kernel memory through speculative execution, even with the protection bits set. The fix, <strong>KPTI</strong> (kernel page-table isolation), gives each process a second set of page tables with almost no kernel mappings while user code runs, and switches on every kernel entry and exit. The address <em>layout</em> stays the same; only what is actually mapped at user time shrinks. CPUs that aren't affected skip KPTI.</p></div>
+
+<h2 id="why-exactly-3-1">Why exactly 3:1?</h2>
+<p>The split is a trade-off between two needs that both want more of the same 4 GB:</p>
+<ul>
+<li><strong>Programs want a big user space.</strong> Databases, browsers and anything that maps large files run out of address space before they run out of RAM. 3 GB was a good amount for 1990s and 2000s software.</li>
+<li><strong>The kernel wants to map physical RAM.</strong> Linux keeps a <strong>direct map</strong> (or "linear map") where physical address <em>P</em> appears at virtual address <code>PAGE_OFFSET + P</code>. That makes it fast and simple for the kernel to reach any page. But with only 1 GB of kernel space, and room needed for other things (vmalloc, I/O mappings), only about <strong>896 MB</strong> of RAM fits in the direct map on 32-bit x86.</li>
+</ul>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 270" role="img" aria-label="32-bit kernel space: the first 896 MB of physical RAM is direct-mapped from 0xC0000000; the top 128 MB holds vmalloc and other mappings; RAM above 896 MB is highmem mapped only temporarily">
+<text class="h" x="20" y="22">Kernel virtual (1 GB)</text><text class="h" x="420" y="22">Physical RAM (e.g. 2 GB)</text>
+<g transform="translate(20,34)">
+<rect class="wn" x="0" y="0" width="240" height="44"/><text class="s" x="12" y="20">vmalloc, kmap, fixmap</text><text class="s" x="12" y="36">≈128 MB</text>
+<rect class="cu" x="0" y="44" width="240" height="160"/><text class="h" x="12" y="110">direct map (lowmem)</text><text class="s" x="12" y="130">≈896 MB, 1:1 with RAM</text>
+<text class="m s" x="0" y="222">0xC0000000</text>
+</g>
+<g transform="translate(420,34)">
+<rect class="b" x="0" y="0" width="240" height="130" style="stroke-dasharray:4 4"/><text class="h" x="12" y="60">highmem</text><text class="s" x="12" y="80">above 896 MB: no permanent</text><text class="s" x="12" y="96">kernel mapping</text>
+<rect class="cu" x="0" y="130" width="240" height="74"/><text class="h" x="12" y="166">lowmem</text><text class="s" x="12" y="184">first 896 MB</text>
+<text class="m s" x="0" y="222">0x00000000</text>
+</g>
+<path class="lc" d="M260 158h160"/><text class="s tc h" x="280" y="150">kernel VA = PA + 0xC0000000</text>
+<path class="ln dash" d="M260 56c80 0 80 40 160 40"/><text class="s" x="282" y="70">mapped on demand</text>
+</svg><figcaption>Why 32-bit systems with more than about 1 GB of RAM need "highmem": the 1 GB kernel region can't map all of physical memory permanently.</figcaption></figure>
+<p>RAM above that line is <strong>highmem</strong>. The kernel can still use it, mostly for user pages and page cache, but must map it temporarily (<code>kmap_local_page()</code>) each time it needs to touch it, which is slower and more complex.</p>
+<p>The split is a build-time choice. Kernel configs offer <code>VMSPLIT_3G</code> (the default), <code>VMSPLIT_2G</code> (2 GB user, 2 GB kernel, more lowmem, used on many 32-bit Arm boards with 1 to 2 GB of RAM) and <code>VMSPLIT_1G</code>. On Arm the boundary is likewise <code>PAGE_OFFSET</code>.</p>
+
+<h2 id="on-64-bit-the-problem-disappears">On 64-bit, the problem disappears</h2>
+<p>64-bit CPUs don't use all 64 address bits. Typical systems use 48: that's 256 TB of virtual address space, split down the middle.</p>
+<table>
+<thead><tr><th></th><th>32-bit (x86, Arm)</th><th>x86-64 (4-level paging)</th><th>Arm64 (48-bit VA)</th></tr></thead>
+<tbody>
+<tr><td>User space</td><td>3 GB</td><td>128 TB, <code>0</code> to <code>0x00007FFF_FFFFFFFF</code></td><td>256 TB, selected by <code>TTBR0_EL1</code></td></tr>
+<tr><td>Kernel space</td><td>1 GB</td><td>128 TB, from <code>0xFFFF8000_00000000</code></td><td>256 TB, selected by <code>TTBR1_EL1</code></td></tr>
+<tr><td>Ratio</td><td>3 : 1</td><td>1 : 1</td><td>1 : 1</td></tr>
+<tr><td>All RAM direct-mapped?</td><td>No (highmem)</td><td>Yes</td><td>Yes</td></tr>
+</tbody>
+</table>
+<p>The halves sit at opposite ends of the 64-bit range with a huge unusable "hole" between them. Addresses in the hole are <em>non-canonical</em> and fault immediately. With tens of terabytes available, the kernel maps all physical RAM directly, highmem isn't needed, and the 3:1 trade-off is history. You'll still meet it on 32-bit embedded Linux.</p>
+<p>Arm64 makes the split explicit in hardware: it has two translation base registers. Addresses with the top bits all zero are translated through <code>TTBR0_EL1</code> (the user tables, switched per process), and addresses with the top bits all one go through <code>TTBR1_EL1</code> (the kernel tables, shared).</p>
+
+<h2 id="how-processes-are-kept-apart">How processes are kept apart</h2>
+<p>Every process has its <strong>own page tables</strong>, the data structure the MMU uses to translate virtual addresses to physical addresses (see <a href="virtual-memory-mmu-tlb.html">Virtual Memory: MMU Page Walks and the TLB</a>). The kernel builds and owns those tables; user code can't modify them.</p>
+<p>That gives isolation for free:</p>
+<ul>
+<li>The same virtual address, say <code>0x00400000</code>, appears in both process A and process B, but their page tables point it at <strong>different physical pages</strong>.</li>
+<li>A process can only reach physical memory its page tables map. There is no address it can write that leads into another process's pages, because no entry in its own tables points there.</li>
+<li>On a context switch, the kernel loads the next process's table base into <code>CR3</code> (x86) or <code>TTBR0_EL1</code> (Arm64), and the whole user half of the address space changes at once.</li>
+</ul>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 300" role="img" aria-label="Two processes each have their own page tables mapping the same virtual address 0x400000 to different physical frames; the kernel half of both maps to the same physical kernel memory">
+<g transform="translate(20,20)">
+<text class="h" x="0" y="0">Process A</text>
+<rect class="cu" x="0" y="12" width="160" height="40"/><text class="s" x="10" y="36">kernel half</text>
+<rect class="sg" x="0" y="52" width="160" height="40"/><text class="m s" x="10" y="76">0x400000 code</text>
+<rect class="sg" x="0" y="92" width="160" height="40"/><text class="m s" x="10" y="116">0x7ff0… stack</text>
+</g>
+<g transform="translate(20,170)">
+<text class="h" x="0" y="0">Process B</text>
+<rect class="cu" x="0" y="12" width="160" height="40"/><text class="s" x="10" y="36">kernel half</text>
+<rect class="wn" x="0" y="52" width="160" height="40"/><text class="m s" x="10" y="76">0x400000 code</text>
+<rect class="wn" x="0" y="92" width="160" height="40"/><text class="m s" x="10" y="116">0x7ff0… stack</text>
+</g>
+<g transform="translate(480,20)">
+<text class="h" x="0" y="0">Physical RAM</text>
+<rect class="cu" x="0" y="12" width="180" height="40"/><text class="s" x="10" y="36">kernel code/data</text>
+<rect class="sg" x="0" y="62" width="180" height="34"/><text class="m s" x="10" y="84">frame 0x1A000</text>
+<rect class="wn" x="0" y="106" width="180" height="34"/><text class="m s" x="10" y="128">frame 0x3C000</text>
+<rect class="sg" x="0" y="150" width="180" height="34"/><text class="m s" x="10" y="172">frame 0x52000</text>
+<rect class="wn" x="0" y="194" width="180" height="34"/><text class="m s" x="10" y="216">frame 0x77000</text>
+</g>
+<path class="ls" d="M180 92C330 92 330 99 480 99M180 132C330 132 330 187 480 187"/>
+<path class="lc" d="M180 242C330 242 330 143 480 143M180 282C330 282 330 231 480 231"/>
+<path class="ln dash" d="M180 52C330 52 330 52 480 52M180 202C330 202 330 60 480 60"/>
+<text class="s" x="250" y="292">Same virtual address, different physical page</text>
+</svg><figcaption>Both processes use virtual address <code>0x400000</code>, but their page tables send it to different physical frames. Only the kernel half points to the same memory, and user code can't access it.</figcaption></figure>
+<p>So when people say "two processes can't access each other's memory", the precise statement is: <em>neither process has a page-table entry pointing to the other's physical pages, and only the kernel can create one.</em></p>
+
+<h2 id="sharing-on-purpose-the-kernel-maps-the-same-page-twice">Sharing on purpose: the kernel maps the same page twice</h2>
+<p>Sometimes processes <em>should</em> share memory: a camera service handing frames to a video encoder, a database with several worker processes, a producer and consumer exchanging large buffers. Copying through a pipe or socket costs time and memory bandwidth.</p>
+<p>The solution follows directly from the isolation mechanism: if isolation means "no page-table entry points at your pages", then sharing means <strong>the kernel adds entries in both processes' tables that point to the same physical pages</strong>. Only the kernel can do this, and only when both processes ask for it through a system call that passes permission checks.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 290" role="img" aria-label="Shared memory: process A maps the shared object at 0x7f10…, process B at 0x7f00…; both page table entries point to the same physical pages owned by the kernel's shmem object">
+<rect class="sg" x="20" y="30" width="200" height="90" rx="6"/><text class="h" x="36" y="54">Process A</text><text class="m s" x="36" y="78">p = 0x7f106eadb000</text><text class="s" x="36" y="100">writes "hello"</text>
+<rect class="wn" x="20" y="170" width="200" height="90" rx="6"/><text class="h" x="36" y="194">Process B</text><text class="m s" x="36" y="218">p = 0x7f00f1ebe000</text><text class="s" x="36" y="240">reads "hello"</text>
+<rect class="cu" x="260" y="100" width="170" height="90" rx="6"/><text class="h" x="276" y="124">Kernel</text><text class="s" x="276" y="146">shmem object</text><text class="m s" x="276" y="166">"/lll_demo"</text><text class="s" x="276" y="182">refcount, permissions</text>
+<rect class="ink" x="480" y="110" width="180" height="70" rx="6"/><text class="h" x="496" y="136">Physical page</text><text class="m s" x="496" y="160">frame 0x8E000</text>
+<path class="ls" d="M220 75C360 75 400 120 480 130"/><text class="s ts" x="300" y="70">A's page-table entry</text>
+<path class="lc" d="M220 215C360 215 400 170 480 160"/><text class="s tc" x="300" y="236">B's page-table entry</text>
+<path class="ln dash" d="M430 145h50"/>
+</svg><figcaption>Shared memory is two page-table entries, in two processes, pointing at one physical page. The virtual addresses differ; the data is the same.</figcaption></figure>
+
+<h3>Example: POSIX shared memory</h3>
+<p>These two programs share 4 KB through a named object. The writer creates and fills it; the reader, a completely separate process, maps the same object and reads it. Run the writer, then the reader.</p>
+<pre><code class="language-c">/* shm_writer.c  build: gcc shm_writer.c -o shm_writer */
+#include &lt;fcntl.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;unistd.h&gt;
+
+#define SHM_NAME "/lll_demo"
+#define SHM_SIZE 4096
+
+int main(void)
+{
+    int fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0600);   /* 1. create a named object */
+    if (fd &lt; 0) { perror("shm_open"); return 1; }
+    if (ftruncate(fd, SHM_SIZE) &lt; 0) { perror("ftruncate"); return 1; }  /* 2. set its size */
+
+    char *p = mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE,
+                   MAP_SHARED, fd, 0);                     /* 3. map it into this process */
+    if (p == MAP_FAILED) { perror("mmap"); return 1; }
+    close(fd);                                             /* the mapping stays valid */
+
+    snprintf(p, SHM_SIZE, "hello from pid %d", getpid()); /* 4. plain memory write */
+    printf("writer: mapped at %p, wrote \"%s\"\n", (void *)p, p);
+    return 0;
+}</code></pre>
+<pre><code class="language-c">/* shm_reader.c  build: gcc shm_reader.c -o shm_reader */
+#include &lt;fcntl.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;unistd.h&gt;
+
+#define SHM_NAME "/lll_demo"
+#define SHM_SIZE 4096
+
+int main(void)
+{
+    int fd = shm_open(SHM_NAME, O_RDONLY, 0);
+    if (fd &lt; 0) { perror("shm_open"); return 1; }
+
+    const char *p = mmap(NULL, SHM_SIZE, PROT_READ, MAP_SHARED, fd, 0);
+    if (p == MAP_FAILED) { perror("mmap"); return 1; }
+    close(fd);
+
+    printf("reader: mapped at %p, read \"%s\"\n", (const void *)p, p);
+    shm_unlink(SHM_NAME);                                  /* remove the name when done */
+    return 0;
+}</code></pre>
+<pre><code class="language-bash">$ ./shm_writer &amp;&amp; ./shm_reader
+writer: mapped at 0x7f106eadb000, wrote "hello from pid 171"
+reader: mapped at 0x7f00f1ebe000, read "hello from pid 171"</code></pre>
+<p>Look at the two addresses: they're different. Each process sees the shared page wherever the kernel placed it in <em>its</em> address space, yet both reach the same physical page. The data even outlived the writer process, because the kernel keeps the object until <code>shm_unlink()</code> and the last unmap. (On older glibc, link with <code>-lrt</code>.)</p>
+
+<h2 id="what-the-kernel-does-at-each-step">What the kernel does at each step</h2>
+<table>
+<thead><tr><th>Call</th><th>Kernel's job</th></tr></thead>
+<tbody>
+<tr><td><code>shm_open()</code></td><td>Creates or opens a file in <code>/dev/shm</code>, a RAM-backed tmpfs filesystem. Checks permissions like any file.</td></tr>
+<tr><td><code>ftruncate()</code></td><td>Sets the object's size. No RAM is allocated yet.</td></tr>
+<tr><td><code>mmap(MAP_SHARED)</code></td><td>Reserves a range of virtual addresses in the caller and records a mapping (a VMA) that refers to the object. Still no page-table entries.</td></tr>
+<tr><td>First access</td><td>Page fault. The kernel finds or allocates the physical page in the object's page cache, adds a page-table entry, and the access retries. The second process faulting on the same offset finds the <em>same</em> page.</td></tr>
+<tr><td><code>munmap()</code> / exit</td><td>Removes the page-table entries and drops a reference. Pages are freed only when nothing references them.</td></tr>
+</tbody>
+</table>
+<p>This is the "shared memory pool" role of the kernel: it owns the physical pages, decides who may map them, counts references, and frees them when the last user goes away.</p>
+
+<h2 id="other-ways-the-kernel-shares-memory">Other ways the kernel shares memory</h2>
+<table>
+<thead><tr><th>Mechanism</th><th>How it works</th><th>Typical use</th></tr></thead>
+<tbody>
+<tr><td>POSIX shm (<code>shm_open</code> + <code>mmap</code>)</td><td>Named object in tmpfs, mapped shared</td><td>Unrelated processes exchanging data</td></tr>
+<tr><td>System V shm (<code>shmget</code>, <code>shmat</code>)</td><td>Older API, numeric keys, same idea</td><td>Legacy software, some databases</td></tr>
+<tr><td><code>memfd_create</code> + fd passing</td><td>Anonymous in-memory file, file descriptor sent over a Unix socket</td><td>Wayland, Android-style buffer sharing, sandboxes</td></tr>
+<tr><td><code>mmap</code> of the same file with <code>MAP_SHARED</code></td><td>Both processes map the file's page cache pages</td><td>Databases, persistent shared state</td></tr>
+<tr><td>Shared libraries</td><td>Read-only code pages of <code>libc.so</code> mapped into every process</td><td>Automatic: one copy of libc in RAM for all</td></tr>
+<tr><td><code>fork()</code> copy-on-write</td><td>Parent and child share all pages read-only; a write fault gives the writer a private copy</td><td>Fast process creation</td></tr>
+<tr><td>dma-buf</td><td>Kernel object sharing buffers between devices and processes</td><td>GPU, camera and display pipelines</td></tr>
+</tbody>
+</table>
+
+<div class="pitfall"><strong>Sharing memory doesn't synchronize it</strong>
+<p>Once two processes share a page, they have exactly the same problems as two threads sharing a variable: races, partial updates and memory-ordering issues. Protect shared structures with a process-shared mutex (<code>pthread_mutexattr_setpshared()</code>), a semaphore placed in the shared region (<code>sem_init(&amp;s, 1, 0)</code>), or lock-free techniques with C11 atomics. And never store ordinary pointers inside shared memory: each process maps it at a different address, so store offsets instead.</p></div>
+
+<h2 id="see-it-on-your-system">See it on your system</h2>
+<pre><code class="language-bash">cat /proc/self/maps                 # this process's virtual layout
+ls -l /dev/shm                      # POSIX shared memory objects
+ipcs -m                             # System V shared memory segments
+grep -i 'vmsplit\|page_offset' /boot/config-$(uname -r)   # 32-bit split option
+pmap -x &lt;pid&gt;                       # per-mapping sizes, incl. shared</code></pre>
+<div class="key"><strong>Key takeaway</strong>
+<p>32-bit Linux splits each 4 GB address space 3 GB user and 1 GB kernel, so the kernel is mapped (but protected) in every process for fast system calls, at the cost of limiting how much RAM it can map directly. 64-bit splits a vast space evenly and removes that limit. Processes are isolated because each has its own page tables; they share memory only when the kernel deliberately maps the same physical pages into both, then tracks and frees those pages for them.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="system-calls-arm64-x86-64.html"><small>Previous in Linux systems</small><span>How System Calls Work on Arm64 and x86-64</span></a><a class="pn next" href="virtual-physical-memory-buddy-slab.html"><small>Next in Linux systems</small><span>Virtual vs Physical Memory: From malloc() to RAM</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261120" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>
