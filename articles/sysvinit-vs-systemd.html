@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SysV init vs systemd: How Linux Starts Services, with Examples | LowLevel Labs</title>
+<meta name="description" content="What PID 1 does, how SysV init boots with runlevels and shell scripts, how systemd boots with units, dependencies and cgroups, the same service written both ways, and a command cheat sheet.">
+<link rel="canonical" href="https://lowlevellabs.in/articles/sysvinit-vs-systemd.html">
+<meta property="og:title" content="SysV init vs systemd: How Linux Starts Services, with Examples"><meta property="og:description" content="What PID 1 does, how SysV init boots with runlevels and shell scripts, how systemd boots with units, dependencies and cgroups, the same service written both ways, and a command cheat sheet.">
+<meta property="og:type" content="website"><meta property="og:url" content="https://lowlevellabs.in/articles/sysvinit-vs-systemd.html">
+<meta property="og:image" content="https://lowlevellabs.in/assets/covers/sysvinit-vs-systemd.png"><meta property="og:image:width" content="1600"><meta property="og:image:height" content="840"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://lowlevellabs.in/assets/covers/sysvinit-vs-systemd.png">
+<meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<script>(function(){var t;try{t=localStorage.getItem('ll-theme')}catch(e){}if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t})()</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css?v=20261122">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "SysV init vs systemd: How Linux Starts Services, with Examples", "description": "What PID 1 does, how SysV init boots with runlevels and shell scripts, how systemd boots with units, dependencies and cgroups, the same service written both ways, and a command cheat sheet.", "datePublished": "2026-11-27", "author": {"@type": "Person", "name": "Hardik"}, "publisher": {"@type": "Organization", "name": "LowLevel Labs"}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="brand" href="../index.html" aria-label="LowLevel Labs home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<nav class="nav" id="nav" aria-label="Main"><a href="../articles.html" aria-current="page">Articles</a><a href="../topics/index.html">Topics</a><a href="../projects.html">Guides</a><a href="../about.html">About</a><a href="../contact.html">Contact</a></nav>
+<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+<button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</div></header>
+<main id="main">
+<header class="article-head"><div class="wrap">
+<div class="crumbs"><a href="../articles.html">Articles</a> / <a href="../topics/linux.html">Linux systems</a></div>
+<h1>SysV init vs systemd: How Linux Starts Services, with Examples</h1>
+<p class="lede">After the kernel finishes booting, it starts exactly one program: init, process ID 1. Everything else, from the network to your login prompt, is started by it. SysV init did this with numbered shell scripts for decades; systemd replaced it with declarative units and a dependency graph. Here is how each works and why the change happened.</p>
+<div class="byline"><span>14 min read</span><span>27 Nov 2026</span></div>
+<figure class="article-cover"><img src="../assets/covers/sysvinit-vs-systemd.png" width="1600" height="840" alt="Cover diagram: SysV init vs systemd: How Linux Starts Services, with Examples" fetchpriority="high"></figure></div></header>
+<div class="wrap layout"><aside class="otp" aria-label="On this page"><h2>On this page</h2><ol><li><a href="#the-job-of-pid-1">The job of PID 1</a></li><li><a href="#sysv-init-runlevels-and-shell-scripts">SysV init: runlevels and shell scripts</a></li><li><a href="#systemd-units-dependencies-and-cgroups">systemd: units, dependencies and cgroups</a></li><li><a href="#the-same-service-written-both-ways">The same service, written both ways</a></li><li><a href="#side-by-side">Side by side</a></li><li><a href="#command-cheat-sheet">Command cheat sheet</a></li><li><a href="#what-about-embedded-linux">What about embedded Linux?</a></li></ol></aside>
+<article class="prose">
+<h2 id="the-job-of-pid-1">The job of PID 1</h2>
+<p>The last thing the kernel does at boot is run <code>/sbin/init</code> (or whatever <code>init=</code> on the kernel command line names) as process 1. That process has special responsibilities:</p>
+<ul>
+<li><strong>Start the system</strong>: mount filesystems, bring up networking, start daemons and login prompts, in a sensible order.</li>
+<li><strong>Supervise</strong>: notice when services die and, ideally, restart them.</li>
+<li><strong>Reap orphans</strong>: any process whose parent exits is re-parented to PID 1, which must collect its exit status so it doesn't linger as a zombie.</li>
+<li><strong>Shut down</strong>: stop services in the right order, unmount filesystems and power off or reboot.</li>
+<li><strong>Never exit</strong>: if PID 1 dies, the kernel panics.</li>
+</ul>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 150" role="img" aria-label="Boot sequence: firmware, bootloader, kernel, then PID 1 init (SysV init or systemd), which starts services and login">
+<g transform="translate(10,40)">
+<rect class="b" x="0" y="0" width="110" height="56" rx="6"/><text class="s" x="14" y="33">Firmware</text>
+<rect class="b" x="130" y="0" width="110" height="56" rx="6"/><text class="s" x="144" y="33">Bootloader</text>
+<rect class="b" x="260" y="0" width="110" height="56" rx="6"/><text class="s" x="274" y="25">Kernel</text><text class="s" x="274" y="43">drivers, rootfs</text>
+<rect class="cu" x="390" y="0" width="130" height="56" rx="6"/><text class="h" x="404" y="25">PID 1: init</text><text class="s" x="404" y="43">SysV or systemd</text>
+<rect class="sg" x="540" y="0" width="120" height="56" rx="6"/><text class="s" x="554" y="25">services,</text><text class="s" x="554" y="43">getty, login</text>
+<path class="ln" d="M110 28h20M240 28h20M370 28h20M520 28h20"/>
+</g>
+</svg><figcaption>Everything before PID 1 is covered in <a href="bootloader-to-kernel-handoff.html">the boot chain article</a>. This article is about what happens from PID 1 onwards.</figcaption></figure>
+
+<h2 id="sysv-init-runlevels-and-shell-scripts">SysV init: runlevels and shell scripts</h2>
+<p>SysV init comes from AT&amp;T's UNIX System V (1983) and was the standard Linux init until the mid-2010s. Its model is simple and fully sequential.</p>
+<h3>Runlevels</h3>
+<p>A <strong>runlevel</strong> is a numbered system state. <code>/etc/inittab</code> names the default one:</p>
+<table>
+<thead><tr><th>Runlevel</th><th>Typical meaning (Red Hat style)</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>Halt</td></tr>
+<tr><td>1 (S)</td><td>Single-user: maintenance, root only, no network</td></tr>
+<tr><td>2</td><td>Multi-user without network services (Debian used 2 as the full default)</td></tr>
+<tr><td>3</td><td>Multi-user with networking, text console</td></tr>
+<tr><td>5</td><td>Multi-user with a graphical login</td></tr>
+<tr><td>6</td><td>Reboot</td></tr>
+</tbody>
+</table>
+<pre><code class="language-text"># /etc/inittab (excerpt)   format: id:runlevels:action:process
+# boot to runlevel 3
+id:3:initdefault:
+# run once at boot: mount filesystems, fsck, set hostname
+si::sysinit:/etc/rc.d/rc.sysinit
+# entering runlevel 3: run its scripts and wait for them
+l3:3:wait:/etc/rc.d/rc 3
+# login prompt on tty1; restart it whenever it exits
+1:2345:respawn:/sbin/mingetty tty1</code></pre>
+<h3>The rc directories</h3>
+<p>Each service has one shell script in <code>/etc/init.d/</code> that accepts <code>start</code>, <code>stop</code>, <code>restart</code> and <code>status</code>. Each runlevel has a directory, <code>/etc/rcN.d/</code>, containing <strong>symlinks</strong> to those scripts. The name of the link encodes everything:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 290" role="img" aria-label="SysV init: on entering runlevel 3, the rc script runs K scripts with stop then S scripts with start, in numeric order, one after another">
+<rect class="ink" x="20" y="20" width="190" height="56" rx="6"/><text class="h" x="36" y="44">init → rc 3</text><text class="s" x="36" y="64">enter runlevel 3</text>
+<g transform="translate(250,10)">
+<text class="m s" x="0" y="0">/etc/rc3.d/</text>
+<rect class="wn" x="0" y="12" width="200" height="28" rx="4"/><text class="m s" x="10" y="31">K20nfs  → stop</text>
+<rect class="sg" x="0" y="48" width="200" height="28" rx="4"/><text class="m s" x="10" y="67">S10network  → start</text>
+<rect class="sg" x="0" y="84" width="200" height="28" rx="4"/><text class="m s" x="10" y="103">S12syslog   → start</text>
+<rect class="sg" x="0" y="120" width="200" height="28" rx="4"/><text class="m s" x="10" y="139">S55sshd     → start</text>
+<rect class="sg" x="0" y="156" width="200" height="28" rx="4"/><text class="m s" x="10" y="175">S80myapp    → start</text>
+<path class="lc" d="M210 26v150"/>
+<text class="s" x="220" y="96">strictly one</text><text class="s" x="220" y="114">after another</text>
+</g>
+<path class="ln" d="M210 48h40"/>
+<g transform="translate(20,220)">
+<text class="m s" x="0" y="0">S 80 myapp</text>
+<text class="s" x="0" y="22">S = start (K = kill/stop) · 80 = order, lower runs first · myapp = script in /etc/init.d/</text>
+<text class="s" x="0" y="44">Each link points to the same /etc/init.d/myapp script.</text>
+</g>
+</svg><figcaption>SysV init orders the whole boot by two-digit numbers in symlink names and runs the scripts in sequence.</figcaption></figure>
+<p>Tools such as <code>update-rc.d</code> (Debian) and <code>chkconfig</code> (Red Hat) create these links from comment headers in the script.</p>
+
+<h3>Strengths and weaknesses</h3>
+<ul>
+<li><strong>Simple and transparent.</strong> It's shell scripts. You can read every line that runs at boot, and debug with <code>sh -x</code>.</li>
+<li><strong>Slow.</strong> Everything runs one at a time. A script waiting 10 seconds for DHCP holds up every service after it, even ones that don't need the network.</li>
+<li><strong>Ordering by number, not by need.</strong> The numbers say "after", but nothing says "requires". If a dependency fails, later scripts start anyway.</li>
+<li><strong>Weak supervision.</strong> Once a daemon forks into the background, init forgets it. If it crashes, nothing restarts it (except entries marked <code>respawn</code> in inittab).</li>
+<li><strong>Fragile process tracking.</strong> <code>stop</code> relies on PID files. A daemon that forks helpers, or a stale PID file, leaves stray processes or kills the wrong one.</li>
+<li><strong>Every script reinvents the wheel</strong>: daemonizing, PID files, logging, privilege dropping.</li>
+</ul>
+
+<h2 id="systemd-units-dependencies-and-cgroups">systemd: units, dependencies and cgroups</h2>
+<p>systemd (2010) is a different model. Instead of scripts, it reads <strong>unit files</strong>: short declarative descriptions of what to run and what it depends on. From those it builds a dependency graph and starts everything it can <strong>in parallel</strong>.</p>
+<h3>Unit types</h3>
+<table>
+<thead><tr><th>Unit</th><th>Describes</th></tr></thead>
+<tbody>
+<tr><td><code>.service</code></td><td>A daemon or one-shot task</td></tr>
+<tr><td><code>.target</code></td><td>A synchronization point grouping other units: the replacement for runlevels</td></tr>
+<tr><td><code>.socket</code></td><td>A listening socket; starts its service on the first connection (socket activation)</td></tr>
+<tr><td><code>.timer</code></td><td>A schedule that starts a service, replacing many cron jobs</td></tr>
+<tr><td><code>.mount</code>, <code>.automount</code></td><td>Filesystems (generated from <code>/etc/fstab</code>)</td></tr>
+<tr><td><code>.device</code>, <code>.path</code>, <code>.slice</code></td><td>Hardware appearing via udev, file changes, cgroup resource groups</td></tr>
+</tbody>
+</table>
+<h3>Booting as a graph</h3>
+<p>systemd's goal is a target, normally <code>default.target</code> → <code>multi-user.target</code> or <code>graphical.target</code>. It works out every unit that target needs, orders them by their <code>After=</code>/<code>Before=</code> relationships, and starts each one as soon as its own dependencies are ready.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 320" role="img" aria-label="systemd dependency graph: sysinit.target leads to basic.target; network.target, syslog and sshd start in parallel; myapp waits only for network-online and postgres; all join at multi-user.target">
+<rect class="b" x="20" y="20" width="160" height="40" rx="6"/><text class="m s" x="34" y="45">sysinit.target</text>
+<rect class="b" x="20" y="90" width="160" height="40" rx="6"/><text class="m s" x="34" y="115">basic.target</text>
+<path class="ln" d="M100 60v30"/>
+<rect class="sg" x="240" y="20" width="190" height="36" rx="6"/><text class="m s" x="252" y="43">systemd-journald</text>
+<rect class="sg" x="240" y="70" width="190" height="36" rx="6"/><text class="m s" x="252" y="93">NetworkManager</text>
+<rect class="sg" x="240" y="120" width="190" height="36" rx="6"/><text class="m s" x="252" y="143">sshd.service</text>
+<rect class="sg" x="240" y="170" width="190" height="36" rx="6"/><text class="m s" x="252" y="193">postgresql.service</text>
+<path class="ln" d="M180 110h30V38h30M210 110h30M210 110v28h30M210 110v78h30"/>
+<rect class="wn" x="470" y="70" width="190" height="36" rx="6"/><text class="m s" x="482" y="93">network-online.target</text>
+<rect class="cu" x="470" y="170" width="190" height="36" rx="6"/><text class="m s" x="482" y="193">myapp.service</text>
+<path class="lc" d="M430 88h40M565 106v64M430 188h40"/>
+<rect class="ink" x="240" y="260" width="420" height="40" rx="6"/><text class="m s" x="256" y="285">multi-user.target  (≈ runlevel 3)</text>
+<path class="ln" d="M335 206v54M565 206v54"/>
+<text class="s" x="20" y="180">Units with no ordering</text><text class="s" x="20" y="198">between them start at</text><text class="s" x="20" y="216">the same time.</text>
+</svg><figcaption>systemd starts sshd, postgres and the network in parallel. <code>myapp</code> waits only for what it declared: the network being online and postgres.</figcaption></figure>
+<p>Two kinds of relationship, often confused:</p>
+<ul>
+<li><strong>Requirement</strong> (<code>Wants=</code>, <code>Requires=</code>): "if you start me, also start that". <code>Requires=</code> additionally stops this unit if that one fails.</li>
+<li><strong>Ordering</strong> (<code>After=</code>, <code>Before=</code>): "if both are being started, start that one first". On its own it doesn't pull anything in.</li>
+</ul>
+<p>You usually need both: <code>Wants=network-online.target</code> plus <code>After=network-online.target</code>.</p>
+
+<h3>Every service in its own cgroup</h3>
+<p>This is systemd's most important technical change. Each service is placed in its own <a href="cgroups-v1-v2-resource-control.html">cgroup</a> (for example <code>/system.slice/myapp.service</code>). Every process the service forks stays in that cgroup, whatever it does to escape its parent. So systemd always knows exactly which processes belong to a service: <code>systemctl stop</code> can kill all of them, <code>systemctl status</code> can list them, and resource limits apply to the whole service. No PID files needed.</p>
+
+<h2 id="the-same-service-written-both-ways">The same service, written both ways</h2>
+<p>Suppose we have a daemon, <code>/usr/local/bin/myapp</code>, that should run as user <code>myapp</code>, start after the network and restart if it crashes.</p>
+<h3>SysV init script</h3>
+<pre><code class="language-bash">#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          myapp
+# Required-Start:    $network $syslog
+# Required-Stop:     $network $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: My application daemon
+### END INIT INFO
+
+DAEMON=/usr/local/bin/myapp
+PIDFILE=/var/run/myapp.pid
+USER=myapp
+
+case "$1" in
+  start)
+    echo "Starting myapp"
+    start-stop-daemon --start --quiet --background --make-pidfile \
+        --pidfile "$PIDFILE" --chuid "$USER" --exec "$DAEMON" -- --config /etc/myapp.conf
+    ;;
+  stop)
+    echo "Stopping myapp"
+    start-stop-daemon --stop --quiet --retry=TERM/10/KILL/5 --pidfile "$PIDFILE"
+    rm -f "$PIDFILE"
+    ;;
+  restart)
+    "$0" stop
+    "$0" start
+    ;;
+  status)
+    if [ -f "$PIDFILE" ] &amp;&amp; kill -0 "$(cat "$PIDFILE")" 2&gt;/dev/null; then
+        echo "myapp is running"; exit 0
+    else
+        echo "myapp is stopped"; exit 3
+    fi
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}"; exit 1
+    ;;
+esac
+exit 0</code></pre>
+<pre><code class="language-bash">cp myapp /etc/init.d/myapp &amp;&amp; chmod +x /etc/init.d/myapp
+update-rc.d myapp defaults          # create S/K links (chkconfig --add myapp on Red Hat)
+service myapp start</code></pre>
+<p>Notice what's missing: if <code>myapp</code> crashes at 3 a.m., it stays down. Its output goes nowhere unless the program handles logging itself.</p>
+
+<h3>systemd unit file</h3>
+<pre><code class="language-ini"># /etc/systemd/system/myapp.service
+[Unit]
+Description=My application daemon
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+User=myapp
+ExecStart=/usr/local/bin/myapp --config /etc/myapp.conf
+Restart=on-failure
+RestartSec=2
+
+# Resource limits (cgroup) and hardening, for free
+MemoryMax=256M
+CPUQuota=50%
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+<pre><code class="language-bash">systemctl daemon-reload             # re-read unit files
+systemctl enable --now myapp        # start at boot (link into multi-user.target.wants) and now
+systemctl status myapp              # state, PID, cgroup tree, last log lines
+journalctl -u myapp -f              # its stdout/stderr, collected by journald</code></pre>
+<p>Fifteen lines of configuration replace a 40-line script, and add things the script never had: automatic restart, captured logs, a memory and CPU cap, and sandboxing. The program itself just runs in the foreground and writes to stdout; it doesn't need to daemonize or manage a PID file.</p>
+<div class="note"><strong>Choosing Type=</strong>
+<p><code>exec</code> or <code>simple</code>: the program stays in the foreground (best). <code>forking</code>: legacy daemons that fork into the background; pair with <code>PIDFile=</code>. <code>notify</code>: the program calls <code>sd_notify("READY=1")</code> when it's truly ready, so dependent units wait for real readiness. <code>oneshot</code>: a task that runs and exits, such as loading firmware or applying settings.</p></div>
+
+<h2 id="side-by-side">Side by side</h2>
+<table>
+<thead><tr><th></th><th>SysV init</th><th>systemd</th></tr></thead>
+<tbody>
+<tr><td>Service definition</td><td>Shell script in <code>/etc/init.d/</code></td><td>Declarative unit file</td></tr>
+<tr><td>Boot order</td><td>Number in symlink name (<code>S80</code>)</td><td>Dependency graph (<code>After=</code>, <code>Wants=</code>)</td></tr>
+<tr><td>Parallel start</td><td>No</td><td>Yes</td></tr>
+<tr><td>System states</td><td>Runlevels 0–6</td><td>Targets: <code>rescue</code>, <code>multi-user</code>, <code>graphical</code> …</td></tr>
+<tr><td>Process tracking</td><td>PID files</td><td>cgroups: every process of a service</td></tr>
+<tr><td>Restart on crash</td><td>Only <code>respawn</code> lines in inittab</td><td><code>Restart=</code> for any service</td></tr>
+<tr><td>Logging</td><td>Each daemon handles it (syslog, files)</td><td>journald captures stdout/stderr automatically</td></tr>
+<tr><td>On-demand start</td><td>Via a separate inetd</td><td>Socket, path, timer and device activation built in</td></tr>
+<tr><td>Resource limits and sandboxing</td><td>Manual (<code>ulimit</code> in the script)</td><td>Unit options (<code>MemoryMax=</code>, <code>ProtectSystem=</code> …)</td></tr>
+<tr><td>Transparency</td><td>Read the script</td><td>Read the unit; behaviour lives in systemd's documented options</td></tr>
+<tr><td>Size</td><td>Tiny</td><td>Large suite (journald, udevd, logind, networkd …)</td></tr>
+</tbody>
+</table>
+
+<h2 id="command-cheat-sheet">Command cheat sheet</h2>
+<table>
+<thead><tr><th>Task</th><th>SysV init</th><th>systemd</th></tr></thead>
+<tbody>
+<tr><td>Start / stop now</td><td><code>service myapp start</code></td><td><code>systemctl start myapp</code></td></tr>
+<tr><td>Status</td><td><code>service myapp status</code></td><td><code>systemctl status myapp</code></td></tr>
+<tr><td>Enable at boot</td><td><code>update-rc.d myapp defaults</code> / <code>chkconfig myapp on</code></td><td><code>systemctl enable myapp</code></td></tr>
+<tr><td>Disable at boot</td><td><code>update-rc.d myapp disable</code> / <code>chkconfig myapp off</code></td><td><code>systemctl disable myapp</code></td></tr>
+<tr><td>List services</td><td><code>ls /etc/rc3.d/</code>, <code>chkconfig --list</code></td><td><code>systemctl list-units --type=service</code></td></tr>
+<tr><td>Current runlevel / target</td><td><code>runlevel</code></td><td><code>systemctl get-default</code></td></tr>
+<tr><td>Switch to single-user</td><td><code>telinit 1</code></td><td><code>systemctl isolate rescue.target</code></td></tr>
+<tr><td>Reboot / power off</td><td><code>telinit 6</code> / <code>telinit 0</code></td><td><code>systemctl reboot</code> / <code>systemctl poweroff</code></td></tr>
+<tr><td>Service logs</td><td><code>/var/log/messages</code>, <code>/var/log/myapp.log</code></td><td><code>journalctl -u myapp</code></td></tr>
+<tr><td>Why is boot slow?</td><td>Read the scripts, add timing by hand</td><td><code>systemd-analyze blame</code>, <code>systemd-analyze critical-chain</code></td></tr>
+</tbody>
+</table>
+<p>For compatibility, systemd still runs old <code>/etc/init.d</code> scripts (it generates units for them), accepts <code>service</code> and <code>telinit</code> commands, and provides <code>runlevel3.target</code> as an alias of <code>multi-user.target</code>.</p>
+
+<h2 id="what-about-embedded-linux">What about embedded Linux?</h2>
+<ul>
+<li><strong>BusyBox init</strong> with a simple <code>/etc/inittab</code> and <code>/etc/init.d/rcS</code> is still common on small devices: a few hundred kilobytes, a sub-second boot, and nothing to configure.</li>
+<li><strong>SysV-style init</strong> (sysvinit) remains Yocto's default in some setups and is easy to audit.</li>
+<li><strong>systemd</strong> is the usual choice on larger devices (gateways, infotainment, industrial PCs) where supervision, watchdog integration (<code>WatchdogSec=</code> with the hardware watchdog), journald and resource limits are worth its size. Both Yocto and Buildroot can build either.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>PID 1 starts, supervises and stops everything in user space. SysV init does it with shell scripts run one by one in numbered order for each runlevel, tracking daemons with PID files. systemd does it with declarative unit files, a dependency graph that starts units in parallel, cgroups to track every process of a service, built-in restart, logging and resource limits, and targets in place of runlevels.</p></div>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="cgroups-v1-v2-resource-control.html"><small>Previous in Linux systems</small><span>cgroups and cgroup v2: Resource Control in Linux, with Examples</span></a><a class="pn next" href="gdbus-architecture-programming-guide.html"><small>Next in Linux systems</small><span>GDBus Architecture &amp; Programming Guide</span></a></nav>
+</article></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>LowLevel <b>Labs</b></span></a>
+<p>Explanations, diagrams and working code for engineers who work below the API.</p>
+<p class="muted">© 2026 LowLevel Labs</p></div>
+<div><h2>Topics</h2><ul><li><a href="../topics/boot.html">Boot & platform</a></li><li><a href="../topics/firmware.html">Embedded firmware</a></li><li><a href="../topics/c.html">C for embedded</a></li><li><a href="../topics/asm.html">Assembly</a></li><li><a href="../topics/cpu.html">CPU internals</a></li><li><a href="../topics/rtos.html">RTOS & VxWorks</a></li></ul></div>
+<div><h2>Site</h2><ul><li><a href="../articles.html">All articles</a></li><li><a href="../projects.html">Guides &amp; exercises</a></li><li><a href="../about.html">About</a></li><li><a href="../contact.html">Contact</a></li><li><a href="https://github.com/Hardik7503/lowlevellabs-site">Source on GitHub</a></li></ul></div>
+</div></footer>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/armasm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/x86asm.min.js" defer></script><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dts.min.js" defer></script>
+<script src="../script.js?v=20261122" defer></script>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "65389390692d4a49a738f41ed4240d62"}'></script>
+</body>
+</html>

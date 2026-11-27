@@ -1,0 +1,224 @@
+<!--meta
+title: cgroups and cgroup v2: Resource Control in Linux, with Examples
+description: What control groups are, how the kernel uses them to limit CPU, memory, I/O and process counts, the differences between cgroup v1 and the unified v2 hierarchy, and hands-on examples with real output.
+topic: linux
+date: 2026-11-27
+read: 15 min read
+featured: 1
+order: 30
+lede: A runaway process can eat every CPU core and all the RAM on a machine. Control groups let the kernel put processes in labelled boxes and give each box a budget. They are what makes containers, systemd services and Kubernetes limits work.
+-->
+<h2>The problem cgroups solve</h2>
+<p>By default, Linux schedules every process as an individual. A build job with 64 compiler processes gets 64 times the CPU of your text editor, and a memory leak in one service can push the whole machine into the OOM killer. Classic tools like <code>nice</code> and <code>ulimit</code> work per process, not per group, and they don't cover memory pressure, disk bandwidth or the number of processes.</p>
+<p>A <strong>control group (cgroup)</strong> is a set of processes the kernel treats as one unit for accounting and limits. You can say "everything in this group together may use at most 2 CPUs and 1 GB of RAM", and every process the group's members start is automatically inside the group too.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 290" role="img" aria-label="Machine with 4 CPUs and 8 GB RAM divided into cgroups: web service limited to 2 CPUs and 2 GB, database with weight 300 and 4 GB guaranteed low, batch jobs limited to 0.5 CPU and 1 GB with pids max 64">
+<rect class="ink" x="20" y="16" width="640" height="44" rx="6"/><text class="h" x="36" y="44">Machine: 4 CPUs · 8 GB RAM · 1 SSD</text>
+<rect class="sg" x="20" y="80" width="200" height="190" rx="8"/><text class="h" x="36" y="106">web.service</text>
+<text class="m s" x="36" y="134">cpu.max = 2 CPUs</text><text class="m s" x="36" y="156">memory.max = 2G</text>
+<rect class="b" x="36" y="180" width="80" height="26" rx="4"/><text class="m s" x="46" y="198">nginx</text><rect class="b" x="124" y="180" width="80" height="26" rx="4"/><text class="m s" x="134" y="198">worker</text>
+<rect class="b" x="36" y="214" width="80" height="26" rx="4"/><text class="m s" x="46" y="232">worker</text>
+<rect class="cu" x="240" y="80" width="200" height="190" rx="8"/><text class="h" x="256" y="106">db.service</text>
+<text class="m s" x="256" y="134">cpu.weight = 300</text><text class="m s" x="256" y="156">memory.low = 4G</text><text class="m s" x="256" y="178">io.weight = 500</text>
+<rect class="b" x="256" y="202" width="100" height="26" rx="4"/><text class="m s" x="266" y="220">postgres</text>
+<rect class="wn" x="460" y="80" width="200" height="190" rx="8"/><text class="h" x="476" y="106">batch.slice</text>
+<text class="m s" x="476" y="134">cpu.max = 0.5 CPU</text><text class="m s" x="476" y="156">memory.max = 1G</text><text class="m s" x="476" y="178">pids.max = 64</text>
+<rect class="b" x="476" y="202" width="80" height="26" rx="4"/><text class="m s" x="486" y="220">make</text><rect class="b" x="564" y="202" width="80" height="26" rx="4"/><text class="m s" x="574" y="220">cc1 ×N</text>
+</svg><figcaption>Each cgroup gets a budget. The limits apply to the group as a whole, however many processes it contains.</figcaption></figure>
+
+<h2>The building blocks</h2>
+<ul>
+<li><strong>A hierarchy.</strong> cgroups form a tree. Limits on a parent apply to everything below it, so a child can never escape its parent's budget.</li>
+<li><strong>Membership.</strong> Every process is in exactly one cgroup of a hierarchy. Children of a process start in their parent's cgroup.</li>
+<li><strong>Controllers.</strong> Each resource is managed by a kernel <em>controller</em> (historically called a subsystem): <code>cpu</code>, <code>memory</code>, <code>io</code>, <code>pids</code>, <code>cpuset</code> and a few more.</li>
+<li><strong>A filesystem interface.</strong> There is no special system call. A cgroup is a directory under <code>/sys/fs/cgroup</code>; you create one with <code>mkdir</code>, set limits by writing to its files, and move a process in by writing its PID to <code>cgroup.procs</code>.</li>
+</ul>
+<p>Underneath, each controller hooks into the relevant part of the kernel: the CPU scheduler checks the group's quota before running its tasks, the page allocator charges every page to the group's memory counter, and the block layer throttles the group's I/O.</p>
+
+<h2>cgroup v1 vs cgroup v2</h2>
+<p>cgroups arrived in Linux 2.6.24 (2008). That first design, now called <strong>v1</strong>, let each controller have its <em>own separate tree</em>. In practice this turned out messy: a process could be in one group for CPU and an unrelated group for memory, controllers couldn't cooperate, and the rules differed per controller. <strong>cgroup v2</strong>, stable since Linux 4.5 (2016), replaces this with <strong>one unified tree</strong> for all controllers.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 320" role="img" aria-label="cgroup v1 has a separate tree per controller (cpu, memory, pids) where a process can sit in different groups in each; cgroup v2 has one unified tree where each group enables controllers for its children with subtree_control">
+<text class="h" x="20" y="22">cgroup v1: one tree per controller</text>
+<g transform="translate(20,36)">
+<rect class="b" x="0" y="0" width="90" height="30" rx="4"/><text class="m s" x="10" y="20">cpu/</text>
+<rect class="sg" x="10" y="50" width="70" height="26" rx="4"/><text class="m s" x="18" y="68">web</text><rect class="b" x="10" y="86" width="70" height="26" rx="4"/><text class="m s" x="18" y="104">batch</text>
+<path class="ln" d="M45 30v20"/>
+<rect class="b" x="110" y="0" width="90" height="30" rx="4"/><text class="m s" x="120" y="20">memory/</text>
+<rect class="b" x="120" y="50" width="70" height="26" rx="4"/><text class="m s" x="128" y="68">all</text><rect class="sg" x="120" y="86" width="70" height="26" rx="4"/><text class="m s" x="128" y="104">limited</text>
+<path class="ln" d="M155 30v20"/>
+<rect class="b" x="220" y="0" width="90" height="30" rx="4"/><text class="m s" x="230" y="20">pids/</text>
+<rect class="sg" x="230" y="50" width="70" height="26" rx="4"/><text class="m s" x="238" y="68">default</text>
+<path class="ln" d="M265 30v20"/>
+<text class="s" x="0" y="146">The same process (green) sits in unrelated</text><text class="s" x="0" y="164">groups in each tree.</text>
+</g>
+<text class="h" x="370" y="22">cgroup v2: one unified tree</text>
+<g transform="translate(370,36)">
+<rect class="ink" x="90" y="0" width="120" height="30" rx="4"/><text class="m s" x="100" y="20">/sys/fs/cgroup</text>
+<path class="ln" d="M150 30v14M60 44h190M60 44v14M250 44v14"/>
+<rect class="cu" x="0" y="58" width="120" height="44" rx="4"/><text class="m s" x="10" y="76">system.slice</text><text class="s" x="10" y="94">+cpu +memory +io</text>
+<rect class="cu" x="190" y="58" width="120" height="44" rx="4"/><text class="m s" x="200" y="76">user.slice</text><text class="s" x="200" y="94">+cpu +memory</text>
+<path class="ln" d="M60 102v16M20 118h80M20 118v12M100 118v12"/>
+<rect class="sg" x="0" y="130" width="70" height="26" rx="4"/><text class="m s" x="6" y="148">web</text>
+<rect class="b" x="80" y="130" width="70" height="26" rx="4"/><text class="m s" x="86" y="148">db</text>
+<text class="s" x="0" y="190">One position per process. All controllers</text><text class="s" x="0" y="208">see the same groups and cooperate.</text>
+</g>
+</svg><figcaption>v1 lets every controller organize processes differently. v2 has a single tree, and each group chooses which controllers its children get.</figcaption></figure>
+<table>
+<thead><tr><th></th><th>cgroup v1</th><th>cgroup v2</th></tr></thead>
+<tbody>
+<tr><td>Hierarchies</td><td>One per controller (or a few combined)</td><td>Exactly one, unified</td></tr>
+<tr><td>Mount point</td><td><code>/sys/fs/cgroup/cpu/</code>, <code>/sys/fs/cgroup/memory/</code> …</td><td><code>/sys/fs/cgroup/</code></td></tr>
+<tr><td>Enabling controllers</td><td>By mounting them</td><td>Per group, via <code>cgroup.subtree_control</code></td></tr>
+<tr><td>Processes in inner nodes</td><td>Allowed anywhere</td><td>Only in leaf groups ("no internal processes" rule)</td></tr>
+<tr><td>CPU limit</td><td><code>cpu.cfs_quota_us</code> + <code>cpu.cfs_period_us</code></td><td><code>cpu.max</code> ("quota period")</td></tr>
+<tr><td>CPU share</td><td><code>cpu.shares</code> (default 1024)</td><td><code>cpu.weight</code> (1–10000, default 100)</td></tr>
+<tr><td>Memory limit</td><td><code>memory.limit_in_bytes</code></td><td><code>memory.max</code>, plus <code>memory.high</code>, <code>memory.low</code>, <code>memory.min</code></td></tr>
+<tr><td>Disk I/O</td><td><code>blkio</code> (missed buffered writeback)</td><td><code>io</code> (includes writeback, works with memory)</td></tr>
+<tr><td>Pressure info (PSI)</td><td>No</td><td><code>cpu.pressure</code>, <code>memory.pressure</code>, <code>io.pressure</code></td></tr>
+<tr><td>Safe delegation to unprivileged users</td><td>Not really</td><td>Yes (rootless containers, user services)</td></tr>
+<tr><td>Status</td><td>Legacy; being removed from systemd and distributions</td><td>Default on current Fedora, Ubuntu, Debian, RHEL, Arch</td></tr>
+</tbody>
+</table>
+<p>Check which one your system uses:</p>
+```bash
+stat -fc %T /sys/fs/cgroup     # cgroup2fs = v2 (unified),  tmpfs = v1 (or hybrid)
+cat /proc/self/cgroup          # v2: a single line "0::/user.slice/…"
+```
+
+<h2>The most useful v2 controls</h2>
+<table>
+<thead><tr><th>File</th><th>Example value</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>cpu.max</code></td><td><code>50000 100000</code></td><td>At most 50 ms of CPU time per 100 ms period: half a CPU. <code>200000 100000</code> = 2 CPUs. <code>max 100000</code> = unlimited.</td></tr>
+<tr><td><code>cpu.weight</code></td><td><code>300</code></td><td>Relative share when CPUs are busy. Only matters under contention; idle CPU is never wasted.</td></tr>
+<tr><td><code>cpuset.cpus</code></td><td><code>2-3</code></td><td>Pin the group to specific cores.</td></tr>
+<tr><td><code>memory.max</code></td><td><code>512M</code></td><td>Hard limit. Above it, the kernel reclaims the group's memory; if it can't, the OOM killer kills a process in the group.</td></tr>
+<tr><td><code>memory.high</code></td><td><code>400M</code></td><td>Soft limit: above it the group is throttled and reclaimed aggressively, but not killed.</td></tr>
+<tr><td><code>memory.low</code> / <code>memory.min</code></td><td><code>1G</code></td><td>Protection: memory under this is kept when other groups need RAM (best effort / guaranteed).</td></tr>
+<tr><td><code>io.max</code></td><td><code>8:0 rbps=10485760 wiops=200</code></td><td>Per-device read bandwidth and write IOPS limits (device major:minor).</td></tr>
+<tr><td><code>pids.max</code></td><td><code>64</code></td><td>Maximum number of processes and threads: stops fork bombs.</td></tr>
+<tr><td><code>memory.current</code>, <code>cpu.stat</code>, <code>memory.events</code></td><td>(read only)</td><td>Live usage, throttling statistics and OOM counts.</td></tr>
+</tbody>
+</table>
+
+<h2>Example: limit a program by hand (cgroup v2)</h2>
+<p>Run as root on a system with cgroup v2. We create a group, enable the CPU and memory controllers for it, set limits and move a shell inside.</p>
+```bash
+cd /sys/fs/cgroup
+cat cgroup.controllers                     # controllers available at the root
+echo "+cpu +memory +pids" > cgroup.subtree_control   # let children use them
+
+mkdir demo                                 # create the group
+echo "50000 100000" > demo/cpu.max         # 0.5 CPU
+echo 100M          > demo/memory.max       # 100 MB hard limit
+echo 0             > demo/memory.swap.max  # no swapping around the limit
+echo 32            > demo/pids.max
+
+echo $$ > demo/cgroup.procs                # move THIS shell into the group
+cat /proc/self/cgroup                      # 0::/demo  -- and every child inherits it
+```
+<p>Anything started from that shell now runs inside the limits. Watch the effect:</p>
+```bash
+timeout 5 sh -c 'while :; do :; done' &    # a busy loop
+top                                        # shows ~50% CPU, not 100%
+cat /sys/fs/cgroup/demo/cpu.stat           # nr_throttled and throttled_usec grow
+cat /sys/fs/cgroup/demo/memory.current     # bytes in use right now
+cat /sys/fs/cgroup/demo/memory.events      # "oom_kill N" after a limit kill
+```
+<p>To remove the group, move the processes out (write their PIDs to the parent's <code>cgroup.procs</code>) and <code>rmdir demo</code>. A group can only be removed when it is empty.</p>
+
+<h2>The same experiment on cgroup v1, with real output</h2>
+<p>v1 uses separate directories per controller and different file names, but the effect is identical. This is real output from a test machine running cgroup v1:</p>
+```bash
+# CPU: 50 ms quota per 100 ms period
+mkdir /sys/fs/cgroup/cpu/demo
+echo 100000 > /sys/fs/cgroup/cpu/demo/cpu.cfs_period_us
+echo 50000  > /sys/fs/cgroup/cpu/demo/cpu.cfs_quota_us
+echo $$     > /sys/fs/cgroup/cpu/demo/cgroup.procs
+timeout 3 sh -c 'while :; do :; done'
+cat /sys/fs/cgroup/cpu/demo/cpu.stat
+```
+```text
+nr_periods 33
+nr_throttled 30
+throttled_time 1447883341
+```
+<p>In 33 periods of 100 ms the busy loop hit its quota 30 times and was held back for 1.45 seconds out of 3: exactly the 50% we asked for.</p>
+<p>For memory, a small program that keeps allocating:</p>
+```python
+# eat.py: allocate 10 MB at a time, up to 300 MB
+b = []
+for i in range(1, 31):
+    b.append(bytearray(10 * 1024 * 1024))       # zero-filled, so the pages are really used
+    print(f"allocated {i * 10} MB", flush=True)
+```
+```bash
+# Memory: 100 MB hard limit, then a program that keeps allocating 10 MB at a time
+mkdir /sys/fs/cgroup/memory/demo
+echo $((100*1024*1024)) > /sys/fs/cgroup/memory/demo/memory.limit_in_bytes
+echo $$ > /sys/fs/cgroup/memory/demo/cgroup.procs
+python3 eat.py; echo "exit status: $?"
+```
+```text
+allocated 80 MB
+allocated 90 MB
+bash: line 1:   209 Killed                  python3 eat.py
+exit status: 137
+```
+<p>The program was killed as it crossed 100 MB (exit status 137 = killed by signal 9), and <code>memory.oom_control</code> recorded <code>oom_kill 1</code>. The rest of the machine was unaffected: that is the point. Note that v1 needed a separate directory, and a separate <code>echo $$</code>, for each controller.</p>
+
+<figure class="fig"><svg class="dg" viewBox="0 0 680 230" role="img" aria-label="CPU bandwidth control timeline: in each 100 ms period the group runs for 50 ms of quota then is throttled until the next period">
+<text class="s" x="20" y="24">cpu.max = "50000 100000"  →  per 100 ms period, at most 50 ms on the CPU</text>
+<g transform="translate(20,50)">
+<rect class="sg" x="0" y="0" width="150" height="40"/><rect class="wn" x="150" y="0" width="150" height="40"/>
+<rect class="sg" x="300" y="0" width="150" height="40"/><rect class="wn" x="450" y="0" width="150" height="40"/>
+<text class="s" x="40" y="25">runs 50 ms</text><text class="s" x="180" y="25">throttled</text><text class="s" x="340" y="25">runs 50 ms</text><text class="s" x="480" y="25">throttled</text>
+<path class="ln" d="M0 56h600M0 50v12M300 50v12M600 50v12"/>
+<text class="m s" x="0" y="80">0 ms</text><text class="m s" x="280" y="80">100 ms</text><text class="m s" x="580" y="80">200 ms</text>
+<text class="s" x="0" y="122">Throttling is per period, so a latency-sensitive service with a tight quota can stall for up to</text>
+<text class="s" x="0" y="140">(period − quota) after a burst. Prefer cpu.weight for sharing, cpu.max for hard caps.</text>
+</g>
+</svg><figcaption>How a CPU quota is enforced: the scheduler stops running the group's tasks once the quota for the current period is used up.</figcaption></figure>
+
+<h2>You're already using cgroups: systemd</h2>
+<p>On a systemd machine every service, user session and container is already in its own cgroup. systemd creates the tree (<code>system.slice</code>, <code>user.slice</code>, <code>machine.slice</code>) and exposes the controls as unit properties, so you rarely write the files by hand:</p>
+```bash
+systemd-cgls                              # the cgroup tree with processes
+systemd-cgtop                             # live CPU/memory/IO per cgroup
+
+# Run a one-off command in a new cgroup with limits
+systemd-run --scope -p CPUQuota=50% -p MemoryMax=100M -p TasksMax=32 stress-ng --cpu 4
+
+# Limit an existing service permanently (writes a drop-in file)
+systemctl set-property nginx.service CPUWeight=200 MemoryHigh=1G
+```
+<table>
+<thead><tr><th>systemd property</th><th>cgroup v2 file</th></tr></thead>
+<tbody>
+<tr><td><code>CPUQuota=50%</code></td><td><code>cpu.max = 50000 100000</code></td></tr>
+<tr><td><code>CPUWeight=200</code></td><td><code>cpu.weight</code></td></tr>
+<tr><td><code>AllowedCPUs=2-3</code></td><td><code>cpuset.cpus</code></td></tr>
+<tr><td><code>MemoryMax=</code> / <code>MemoryHigh=</code> / <code>MemoryLow=</code></td><td><code>memory.max</code> / <code>memory.high</code> / <code>memory.low</code></td></tr>
+<tr><td><code>IOReadBandwidthMax=/dev/sda 10M</code></td><td><code>io.max</code></td></tr>
+<tr><td><code>TasksMax=64</code></td><td><code>pids.max</code></td></tr>
+</tbody>
+</table>
+<p>See <a href="sysvinit-vs-systemd.html">SysV init vs systemd</a> for how systemd uses cgroups to track services.</p>
+
+<h2>Containers are cgroups plus namespaces</h2>
+<p>A container is not a kernel object. It's an ordinary process tree with two kernel features applied: <strong>namespaces</strong> decide what the processes can <em>see</em> (their own PID numbers, network, mounts, hostname), and <strong>cgroups</strong> decide how much they can <em>use</em>. When you run:</p>
+```bash
+docker run --cpus=1.5 --memory=512m --pids-limit=100 nginx
+```
+<p>Docker (through runc) creates a cgroup for the container and writes <code>cpu.max = 150000 100000</code>, <code>memory.max = 536870912</code> and <code>pids.max = 100</code>. Kubernetes CPU and memory <em>limits</em> become the same files on each node, and its <em>requests</em> become weights and memory protection.</p>
+
+<h2>Practical tips</h2>
+<ul>
+<li><strong>Prefer <code>memory.high</code> plus <code>memory.max</code></strong>: high throttles and reclaims before max kills, giving the workload a chance to shed memory.</li>
+<li><strong>Read PSI.</strong> <code>memory.pressure</code> and <code>cpu.pressure</code> show the share of time tasks were stalled waiting for that resource. They tell you a limit is too tight long before OOM kills start.</li>
+<li><strong>Remember page cache counts.</strong> File data a group reads is charged to its memory usage. A backup job can hit its memory limit from cache alone; the kernel reclaims that cache first, so this is usually fine.</li>
+<li><strong>On embedded systems</strong>, cgroups are a cheap way to protect a real-time control process from logging, update or UI processes: put the non-critical work in a group with a CPU quota and memory cap.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>A cgroup is a group of processes with shared limits, managed through files under <code>/sys/fs/cgroup</code>. Controllers enforce CPU time, memory, I/O and process counts for the whole group. cgroup v1 gave each controller its own tree; v2 uses one unified tree with consistent files such as <code>cpu.max</code> and <code>memory.max</code>. systemd, Docker and Kubernetes all express their limits by writing those files.</p></div>

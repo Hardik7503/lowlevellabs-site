@@ -288,7 +288,7 @@ munmap(0x7fd6d01ff000, 268439552)       = 0</code></pre>
 
 <div class="key"><strong>Key takeaway</strong>
 <p>Programs on MMU systems only see virtual addresses; the MMU translates every access using page tables the kernel controls. MPU systems keep physical addresses but restrict access. Linux hands out physical page frames with the buddy allocator, and carves small kernel objects from pages with the slab allocator. <code>malloc</code>/<code>mmap</code> only reserve address space; the first touch of each page faults, and only then does the kernel take a frame from the buddy allocator and map it.</p></div>
-<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="kernel-user-split-shared-memory.html"><small>Previous in Linux systems</small><span>Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory</span></a><a class="pn next" href="gdbus-architecture-programming-guide.html"><small>Next in Linux systems</small><span>GDBus Architecture &amp; Programming Guide</span></a></nav>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="kernel-user-split-shared-memory.html"><small>Previous in Linux systems</small><span>Kernel Space vs User Space: The 3:1 Split, Isolation and Shared Memory</span></a><a class="pn next" href="cgroups-v1-v2-resource-control.html"><small>Next in Linux systems</small><span>cgroups and cgroup v2: Resource Control in Linux, with Examples</span></a></nav>
 </article></div>
 </main>
 <footer class="foot"><div class="wrap">

@@ -156,7 +156,7 @@ if (ioctl(fd, MYADC_SET_CONFIG, &amp;cfg) &lt; 0)
     perror("MYADC_SET_CONFIG");     /* EINVAL, EBUSY, ENOTTY ... */</code></pre>
 <div class="key"><strong>Key takeaway</strong>
 <p>Encode commands with <code>_IO</code>/<code>_IOR</code>/<code>_IOW</code>, build argument structures from fixed-width types with explicit padding, copy in once and validate everything, zero what you copy out, return <code>-ENOTTY</code> for unknown commands, and treat the interface as permanent.</p></div>
-<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="linux-misc-char-driver-from-scratch.html"><small>Previous in Linux device drivers</small><span>Writing a Linux Character Driver from Scratch</span></a><a class="pn next" href="interrupt-context-vs-process-context.html"><small>Next in Linux device drivers</small><span>Linux Kernel Contexts: Process, Softirq, and Hard IRQ</span></a></nav>
+<nav class="endmatter" aria-label="More in this topic"><a class="pn" href="linux-kernel-dma-api.html"><small>Previous in Linux device drivers</small><span>DMA in the Linux Kernel: How It Works, with Examples</span></a><a class="pn next" href="interrupt-context-vs-process-context.html"><small>Next in Linux device drivers</small><span>Linux Kernel Contexts: Process, Softirq, and Hard IRQ</span></a></nav>
 </article></div>
 </main>
 <footer class="foot"><div class="wrap">
