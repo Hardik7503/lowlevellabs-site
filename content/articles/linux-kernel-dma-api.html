@@ -1,0 +1,295 @@
+<!--meta
+title: DMA in the Linux Kernel: How It Works, with Examples
+description: How Linux drivers do DMA: the three kinds of address, the DMA API (coherent and streaming mappings), IOMMUs and bounce buffers, the dmaengine API for SoC DMA controllers, and two complete driver examples.
+topic: drivers
+date: 2026-11-27
+read: 16 min read
+featured: 1
+order: 55
+lede: DMA lets a device move data to and from RAM while the CPU does something else. In Linux, a driver never programs raw physical addresses for this. It asks the DMA API for addresses the device can use, hands buffers over and takes them back. This article explains that model and walks through two real driver patterns.
+-->
+<h2>DMA in one picture</h2>
+<p><strong>Direct Memory Access</strong> means a device reads or writes system memory itself, instead of the CPU copying every byte. The CPU's job shrinks to three things: prepare a buffer, tell the device where it is, and react when the transfer finishes. (For the basics of polling, interrupts and DMA, see <a href="interrupts-polling-dma.html">Interrupts vs Polling vs DMA</a>.)</p>
+<p>There are two hardware arrangements, and Linux handles both with the same core API:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 290" role="img" aria-label="Two DMA styles: a bus-mastering device such as a PCIe NIC with its own DMA engine accesses RAM directly; a simple peripheral such as a UART or SPI controller relies on a separate system DMA controller to move data between its FIFO and RAM">
+<text class="h" x="20" y="22">1. Bus-mastering device</text>
+<rect class="ink" x="20" y="36" width="130" height="50" rx="6"/><text class="h" x="58" y="66">CPU</text>
+<rect class="cu" x="20" y="150" width="190" height="80" rx="6"/><text class="h" x="36" y="174">PCIe NIC, NVMe, GPU</text><text class="s" x="36" y="196">has its own DMA engine,</text><text class="s" x="36" y="214">reads descriptor rings</text>
+<rect class="sg" x="250" y="150" width="90" height="80" rx="6"/><text class="h" x="276" y="196">RAM</text>
+<path class="ln" d="M85 86v64"/><text class="s" x="92" y="122">doorbell</text>
+<path class="lc" d="M210 190h40"/>
+<text class="h" x="380" y="22">2. Peripheral + DMA controller</text>
+<rect class="ink" x="380" y="36" width="130" height="50" rx="6"/><text class="h" x="418" y="66">CPU</text>
+<rect class="b" x="380" y="150" width="120" height="80" rx="6"/><text class="h" x="396" y="174">UART / SPI</text><text class="s" x="396" y="196">FIFO register,</text><text class="s" x="396" y="214">DMA request line</text>
+<rect class="wn" x="520" y="100" width="140" height="50" rx="6"/><text class="h" x="532" y="122">DMA controller</text><text class="s" x="532" y="140">(PL330, EDMA, …)</text>
+<rect class="sg" x="570" y="190" width="90" height="56" rx="6"/><text class="h" x="596" y="224">RAM</text>
+<path class="lc" d="M500 190c30 0 40-40 40-40M610 150v40"/>
+<path class="ln" d="M445 86v64M510 60c40 0 60 20 70 40"/><text class="s" x="550" y="76">program channel</text>
+<text class="s" x="20" y="276">Linux: DMA API only</text><text class="s" x="380" y="276">Linux: DMA API + dmaengine</text>
+</svg><figcaption>Bus masters (left) move data themselves. Simple peripherals (right) borrow a channel on a shared DMA controller. Both need DMA-safe buffers from the DMA API.</figcaption></figure>
+
+<h2>The three addresses</h2>
+<p>The single most important idea in Linux DMA is that one buffer has <strong>three different addresses</strong>, and the device must be given the right one:</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 270" role="img" aria-label="One buffer, three addresses: CPU virtual address from kmalloc, CPU physical address, and the DMA (bus) address the device uses, which may differ because of an IOMMU or bus offsets">
+<rect class="sg" x="20" y="20" width="200" height="74" rx="6"/><text class="h" x="36" y="44">CPU virtual</text><text class="m s" x="36" y="64">void *buf</text><text class="m s" x="36" y="82">0xffff0000_0a3c2000</text>
+<rect class="b" x="240" y="20" width="200" height="74" rx="6"/><text class="h" x="256" y="44">CPU physical</text><text class="m s" x="256" y="64">phys_addr_t</text><text class="m s" x="256" y="82">0x0000_8a3c_2000</text>
+<rect class="cu" x="460" y="20" width="200" height="74" rx="6"/><text class="h" x="476" y="44">DMA / bus address</text><text class="m s" x="476" y="64">dma_addr_t</text><text class="m s" x="476" y="82">0x0000_fff0_1000</text>
+<path class="ln" d="M220 57h20M440 57h20"/>
+<text class="s" x="246" y="118">MMU translates</text><text class="s" x="246" y="134">virtual → physical</text>
+<text class="s" x="466" y="118">IOMMU (or bus offsets)</text><text class="s" x="466" y="134">translates DMA → physical</text>
+<rect class="ink" x="20" y="160" width="300" height="90" rx="6"/><text class="h" x="36" y="184">The CPU and driver code use</text><text class="m s" x="36" y="206">buf  (virtual)</text><text class="s" x="36" y="230">never the physical address</text>
+<rect class="wn" x="360" y="160" width="300" height="90" rx="6"/><text class="h" x="376" y="184">The device is programmed with</text><text class="m s" x="376" y="206">dma_handle  (dma_addr_t)</text><text class="s" x="376" y="230">returned by the DMA API</text>
+</svg><figcaption>Only the DMA API knows how to turn a buffer into an address the device can use on this particular platform.</figcaption></figure>
+<p>On a simple board, the DMA address may equal the physical address. But with an <strong>IOMMU</strong> (an MMU for devices: Arm SMMU, Intel VT-d, AMD-Vi) the device sees its own virtual addresses (IOVAs). On other systems the bus adds an offset, or the device can only reach the first 4 GB. A driver that writes <code>virt_to_phys(buf)</code> into a device register works on one board and corrupts memory on the next. <strong>Always use the <code>dma_addr_t</code> the API gives you.</strong></p>
+
+<h2>Step 0: tell the kernel what the device can reach</h2>
+<p>Many devices can only generate 32-bit addresses, or 36, or 40. Declare this once in <code>probe()</code>:</p>
+```c
+ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));   /* device emits 32-bit addresses */
+if (ret)
+    return dev_err_probe(dev, ret, "no suitable DMA available\n");
+```
+<p>If a buffer later sits above what the device can reach and there is no IOMMU, the kernel transparently copies it through a <strong>bounce buffer</strong> (<code>swiotlb</code>) below the limit. That works, but costs a memory copy per transfer, so set the mask as wide as the hardware really supports.</p>
+
+<h2>The DMA API: two kinds of mapping</h2>
+<table>
+<thead><tr><th></th><th>Coherent (consistent) mapping</th><th>Streaming mapping</th></tr></thead>
+<tbody>
+<tr><td>Function</td><td><code>dma_alloc_coherent()</code></td><td><code>dma_map_single()</code>, <code>dma_map_sg()</code>, <code>dma_map_page()</code></td></tr>
+<tr><td>Buffer comes from</td><td>The API allocates it</td><td>Your existing buffer (kmalloc, page, skb, bio)</td></tr>
+<tr><td>Lifetime</td><td>Long: usually the life of the driver</td><td>Short: one transfer</td></tr>
+<tr><td>CPU and device see the same data</td><td>Always, with no extra calls</td><td>Only at map, unmap and sync points</td></tr>
+<tr><td>CPU access speed</td><td>Often uncached on non-coherent systems: slow</td><td>Normal cached access: fast</td></tr>
+<tr><td>Typical use</td><td>Descriptor rings, mailboxes, status blocks</td><td>Packet data, disk blocks, audio buffers</td></tr>
+</tbody>
+</table>
+
+<h3>Streaming mappings and buffer ownership</h3>
+<p>A streaming mapping hands a buffer back and forth between the CPU and the device. At any moment exactly one of them <strong>owns</strong> it, and only the owner may touch it. The map, unmap and sync calls are the hand-offs, and they do whatever cache maintenance or bouncing the platform needs (see <a href="dma-cache-coherency.html">DMA and Cache Coherency</a>).</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 230" role="img" aria-label="Ownership timeline of a streaming DMA buffer: CPU owns, dma_map gives to device, device transfers, dma_unmap or sync_for_cpu gives back to CPU">
+<g transform="translate(20,30)">
+<rect class="sg" x="0" y="0" width="150" height="60" rx="6"/><text class="h" x="14" y="24">CPU owns</text><text class="s" x="14" y="44">fill or prepare buffer</text>
+<rect class="cu" x="230" y="0" width="190" height="60" rx="6"/><text class="h" x="244" y="24">Device owns</text><text class="s" x="244" y="44">CPU must not touch it</text>
+<rect class="sg" x="500" y="0" width="140" height="60" rx="6"/><text class="h" x="514" y="24">CPU owns</text><text class="s" x="514" y="44">read the result</text>
+<path class="lc" d="M150 30h80M420 30h80"/>
+<text class="m s" x="150" y="86">dma_map_single()</text><text class="m s" x="150" y="104">or sync_for_device()</text>
+<text class="m s" x="420" y="86">dma_unmap_single()</text><text class="m s" x="420" y="104">or sync_for_cpu()</text>
+<text class="s" x="0" y="150">Direction tells the API what maintenance to do:</text>
+<text class="m s" x="0" y="172">DMA_TO_DEVICE      CPU wrote it, device reads it  (clean cache)</text>
+<text class="m s" x="0" y="192">DMA_FROM_DEVICE    device writes it, CPU reads it (invalidate)</text>
+</g>
+</svg><figcaption>Treat map and unmap as "give to device" and "take back". Reading a buffer the device still owns is a bug even if it seems to work on x86.</figcaption></figure>
+
+<h2>Example 1: a bus-mastering device with a descriptor ring</h2>
+<p>This is the pattern used by network cards, NVMe drives and most PCIe devices. The device reads a <strong>ring of descriptors</strong> from memory. Each descriptor points to a data buffer. The ring is long-lived and shared continuously, so it's a coherent allocation; the data buffers change every transfer, so they're streaming mappings.</p>
+<figure class="fig"><svg class="dg" viewBox="0 0 680 290" role="img" aria-label="Transmit descriptor ring in coherent memory with head and tail; each descriptor holds a DMA address and length pointing to a streaming-mapped packet buffer; driver writes tail doorbell; device reads descriptors and buffers and raises a completion interrupt">
+<rect class="cu" x="20" y="30" width="300" height="200" rx="8"/><text class="h" x="36" y="54">TX ring (dma_alloc_coherent)</text>
+<g transform="translate(36,70)">
+<rect class="b" x="0" y="0" width="268" height="30"/><text class="m s" x="10" y="20">[0] addr=…, len=1514, DONE</text>
+<rect class="b" x="0" y="30" width="268" height="30"/><text class="m s" x="10" y="50">[1] addr=…, len=60,   DONE</text>
+<rect class="sg" x="0" y="60" width="268" height="30"/><text class="m s" x="10" y="80">[2] addr=0xfff01000, len=1200</text>
+<rect class="b" x="0" y="90" width="268" height="30"/><text class="m s" x="10" y="110">[3] empty</text>
+<rect class="b" x="0" y="120" width="268" height="30"/><text class="m s" x="10" y="140">[4] empty</text>
+</g>
+<rect class="sg" x="400" y="120" width="260" height="60" rx="6"/><text class="h" x="416" y="144">packet buffer (skb data)</text><text class="s" x="416" y="164">dma_map_single(…, DMA_TO_DEVICE)</text>
+<path class="lc" d="M304 145h96"/>
+<rect class="ink" x="400" y="30" width="260" height="60" rx="6"/><text class="h" x="416" y="54">NIC</text><text class="s" x="416" y="74">TAIL register = 3 (doorbell)</text>
+<path class="ln dash" d="M530 90v30"/>
+<text class="s" x="20" y="262">1. map buffer  2. fill descriptor  3. dma_wmb()  4. write tail  5. IRQ: unmap, free</text>
+</svg><figcaption>The ring is coherent so the CPU and device always agree on descriptor contents. Each packet is mapped just for its own transfer.</figcaption></figure>
+```c
+struct my_desc {                 /* layout defined by the device's datasheet */
+    __le64 addr;
+    __le16 len;
+    __le16 flags;                /* DESC_OWN_HW, DESC_DONE, ... */
+    __le32 reserved;
+};
+
+struct my_ring {
+    struct my_desc *desc;        /* CPU address of the ring      */
+    dma_addr_t      desc_dma;    /* device address of the ring   */
+    struct sk_buff *skb[RING_SIZE];
+    dma_addr_t      buf_dma[RING_SIZE];
+    unsigned int    tail;
+};
+
+/* probe(): allocate the ring once */
+ring->desc = dma_alloc_coherent(dev, RING_SIZE * sizeof(*ring->desc),
+                                &ring->desc_dma, GFP_KERNEL);
+if (!ring->desc)
+    return -ENOMEM;
+writel(lower_32_bits(ring->desc_dma), priv->base + REG_TX_RING_LO);
+writel(upper_32_bits(ring->desc_dma), priv->base + REG_TX_RING_HI);
+
+/* transmit one packet */
+static int my_xmit(struct my_priv *priv, struct sk_buff *skb)
+{
+    struct my_ring *ring = &priv->tx;
+    unsigned int i = ring->tail % RING_SIZE;
+    dma_addr_t dma;
+
+    dma = dma_map_single(priv->dev, skb->data, skb->len, DMA_TO_DEVICE);   /* 1 */
+    if (dma_mapping_error(priv->dev, dma))
+        return -ENOMEM;
+
+    ring->skb[i] = skb;
+    ring->buf_dma[i] = dma;
+    ring->desc[i].addr  = cpu_to_le64(dma);                                 /* 2 */
+    ring->desc[i].len   = cpu_to_le16(skb->len);
+    dma_wmb();                         /* descriptor contents before ownership bit */
+    ring->desc[i].flags = cpu_to_le16(DESC_OWN_HW);
+
+    ring->tail++;
+    writel(ring->tail % RING_SIZE, priv->base + REG_TX_TAIL);               /* 4: doorbell */
+    return 0;
+}
+
+/* completion interrupt (or NAPI poll): give buffers back to the CPU */
+static void my_tx_clean(struct my_priv *priv, unsigned int i)
+{
+    struct my_ring *ring = &priv->tx;
+
+    dma_unmap_single(priv->dev, ring->buf_dma[i], ring->skb[i]->len, DMA_TO_DEVICE);  /* 5 */
+    dev_consume_skb_any(ring->skb[i]);
+    ring->skb[i] = NULL;
+}
+```
+<p>Points that matter in this code:</p>
+<ul>
+<li><code>cpu_to_le64()</code>: the descriptor format is fixed by hardware, usually little-endian, so the driver converts. It costs nothing on little-endian CPUs and makes the driver correct everywhere.</li>
+<li><code>dma_wmb()</code>: a barrier so the device can never see the "owned by hardware" flag before the address and length are written. Without it, a weakly ordered CPU may reorder the stores and the device sends garbage.</li>
+<li><code>writel()</code> to the tail register includes the ordering needed so all earlier memory writes are visible to the device before the doorbell.</li>
+<li><code>dma_mapping_error()</code> must be checked: mapping can fail when an IOMMU or bounce pool runs out of space.</li>
+</ul>
+
+<h3>Receive is the mirror image</h3>
+<p>For receive, the driver pre-maps empty buffers with <code>DMA_FROM_DEVICE</code> and puts them in the ring. When the device has filled one, the driver calls <code>dma_sync_single_for_cpu()</code> (or unmaps) <em>before</em> reading the data. If it recycles the buffer, it calls <code>dma_sync_single_for_device()</code> before handing it back.</p>
+
+<h2>Example 2: a peripheral using a DMA controller (dmaengine)</h2>
+<p>A UART, SPI or audio controller on an SoC usually has no DMA engine of its own. It has a <strong>request line</strong> to a shared system DMA controller. Linux exposes those controllers through the <strong>dmaengine</strong> framework, so a SPI driver doesn't need to know whether the SoC uses a PL330, an EDMA or an SDMA.</p>
+<p>The Device Tree connects the peripheral to its channels:</p>
+```dts
+spi0: spi@ff110000 {
+    compatible = "vendor,my-spi";
+    reg = <0xff110000 0x1000>;
+    dmas = <&dmac 12>, <&dmac 13>;      /* controller + request line numbers */
+    dma-names = "tx", "rx";
+};
+```
+<figure class="fig"><svg class="dg" viewBox="0 0 680 300" role="img" aria-label="dmaengine slave transfer steps: request channel, slave config, map buffer, prep descriptor, set callback, submit, issue pending, controller moves data, callback completes, unmap">
+<g transform="translate(10,14)">
+<rect class="sg" x="0" y="0" width="215" height="40" rx="5"/><text class="m s" x="10" y="25">1. dma_request_chan()</text>
+<rect class="sg" x="0" y="50" width="215" height="40" rx="5"/><text class="m s" x="10" y="75">2. slave_config()</text>
+<rect class="sg" x="0" y="100" width="215" height="40" rx="5"/><text class="m s" x="10" y="125">3. dma_map_single()</text>
+<rect class="cu" x="240" y="0" width="215" height="40" rx="5"/><text class="m s" x="250" y="25">4. prep_slave_single()</text>
+<rect class="cu" x="240" y="50" width="215" height="40" rx="5"/><text class="m s" x="250" y="75">5. set callback</text>
+<rect class="cu" x="240" y="100" width="215" height="40" rx="5"/><text class="m s" x="250" y="125">6. dmaengine_submit()</text>
+<rect class="cu" x="240" y="150" width="215" height="40" rx="5"/><text class="m s" x="250" y="175">7. issue_pending()</text>
+<rect class="wn" x="480" y="150" width="180" height="40" rx="5"/><text class="m s" x="490" y="175">8. DMA moves data</text>
+<rect class="ink" x="480" y="210" width="180" height="40" rx="5"/><text class="m s" x="490" y="235">9. callback runs</text>
+<rect class="sg" x="240" y="210" width="215" height="40" rx="5"/><text class="m s" x="250" y="235">10. unmap, use data</text>
+<path class="ln" d="M107 40v10M107 90v10M215 120c12 0 12-100 25-100M347 40v10M347 90v10M347 140v10M455 170h25M570 190v20M480 230h-25"/>
+</g>
+<text class="s" x="20" y="290">Nothing starts until issue_pending: submit only queues the descriptor.</text>
+</svg><figcaption>The dmaengine "slave" sequence. Steps 1–2 usually happen once in probe; steps 3–10 run per transfer.</figcaption></figure>
+```c
+#include <linux/dmaengine.h>
+#include <linux/dma-mapping.h>
+#include <linux/completion.h>
+
+struct my_spi {
+    struct device     *dev;
+    void __iomem      *base;
+    phys_addr_t        phys;         /* physical address of the register block */
+    struct dma_chan   *rx_chan;
+    struct completion  rx_done;
+};
+
+/* probe(): get and configure the channel once */
+static int my_spi_dma_init(struct my_spi *ms)
+{
+    struct dma_slave_config cfg = {
+        .direction      = DMA_DEV_TO_MEM,
+        .src_addr       = ms->phys + REG_RX_FIFO,   /* device FIFO: fixed address */
+        .src_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE,
+        .src_maxburst   = 8,                        /* match the FIFO threshold   */
+    };
+
+    ms->rx_chan = dma_request_chan(ms->dev, "rx");   /* name from dma-names in DT */
+    if (IS_ERR(ms->rx_chan))
+        return dev_err_probe(ms->dev, PTR_ERR(ms->rx_chan), "no rx DMA channel\n");
+
+    init_completion(&ms->rx_done);
+    return dmaengine_slave_config(ms->rx_chan, &cfg);
+}
+
+static void my_spi_rx_callback(void *param)
+{
+    struct my_spi *ms = param;
+    complete(&ms->rx_done);                         /* runs in tasklet/IRQ context */
+}
+
+/* receive len bytes into buf (a kmalloc'ed buffer, never on the stack) */
+static int my_spi_dma_rx(struct my_spi *ms, void *buf, size_t len)
+{
+    struct device *dmadev = ms->rx_chan->device->dev; /* map for the DMA controller */
+    struct dma_async_tx_descriptor *desc;
+    dma_addr_t dma;
+    int ret = 0;
+
+    dma = dma_map_single(dmadev, buf, len, DMA_FROM_DEVICE);
+    if (dma_mapping_error(dmadev, dma))
+        return -ENOMEM;
+
+    desc = dmaengine_prep_slave_single(ms->rx_chan, dma, len,
+                                       DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
+    if (!desc) {
+        ret = -EIO;
+        goto unmap;
+    }
+    desc->callback = my_spi_rx_callback;
+    desc->callback_param = ms;
+
+    reinit_completion(&ms->rx_done);
+    dmaengine_submit(desc);                    /* queue it               */
+    dma_async_issue_pending(ms->rx_chan);      /* actually start         */
+    writel(CTRL_RX_DMA_EN, ms->base + REG_CTRL);   /* let the SPI raise DMA requests */
+
+    if (!wait_for_completion_timeout(&ms->rx_done, msecs_to_jiffies(100))) {
+        dmaengine_terminate_sync(ms->rx_chan);     /* stop a stuck transfer */
+        ret = -ETIMEDOUT;
+    }
+unmap:
+    dma_unmap_single(dmadev, dma, len, DMA_FROM_DEVICE);   /* buffer back to CPU */
+    return ret;
+}
+```
+<p>Three details people get wrong:</p>
+<ul>
+<li><strong>Map with the DMA controller's device</strong>, not the peripheral's: the controller is what performs the memory access, so its IOMMU and address limits apply.</li>
+<li><strong>The FIFO address is a physical register address</strong> (<code>src_addr</code>), taken from the resource, not the <code>ioremap()</code>ed pointer.</li>
+<li><strong>Never DMA into the stack</strong> or into memory from <code>vmalloc()</code>. Stack buffers may share cache lines with live variables, and with <code>CONFIG_VMAP_STACK</code> they aren't physically contiguous. Use <code>kmalloc()</code> or the DMA API's own allocations.</li>
+</ul>
+
+<h2>Scatter-gather: many pieces, one transfer</h2>
+<p>Large buffers in Linux are rarely physically contiguous: a 1 MB user buffer is 256 separate 4 KB pages. A <strong>scatterlist</strong> describes all the pieces, and <code>dma_map_sg()</code> maps them in one call. With an IOMMU, it may even merge them into one contiguous range from the device's point of view.</p>
+```c
+int n = dma_map_sg(dev, sgt->sgl, sgt->orig_nents, DMA_FROM_DEVICE);
+if (!n)
+    return -ENOMEM;
+for_each_sg(sgt->sgl, sg, n, i)               /* use the returned count, not orig_nents */
+    program_desc(i, sg_dma_address(sg), sg_dma_len(sg));
+/* ... transfer ... */
+dma_unmap_sg(dev, sgt->sgl, sgt->orig_nents, DMA_FROM_DEVICE);   /* original count here */
+```
+
+<h2>Debugging DMA</h2>
+<ul>
+<li><strong><code>CONFIG_DMA_API_DEBUG</code></strong> checks every call at runtime: unmapping with the wrong size or direction, forgetting to check for mapping errors, touching a buffer while the device owns it, leaking mappings at driver unload. Turn it on in development kernels.</li>
+<li><strong>IOMMU faults</strong> in <code>dmesg</code> (for example "arm-smmu: Unhandled context fault: iova=0x…") mean the device used an address that was never mapped for it: usually a stale, unmapped or hand-computed address.</li>
+<li><strong><code>/sys/kernel/debug/dmaengine/summary</code></strong> lists DMA controllers, their channels and which drivers hold them.</li>
+<li><strong>Data correct on x86, corrupted on Arm</strong> almost always means missing sync calls or barriers: x86 PCIe DMA is cache-coherent and forgiving; many Arm SoCs aren't.</li>
+</ul>
+
+<div class="key"><strong>Key takeaway</strong>
+<p>Set the device's DMA mask in probe. Use <code>dma_alloc_coherent()</code> for long-lived shared structures such as descriptor rings, and streaming <code>dma_map_*()</code> calls for data buffers, treating map and unmap as handing ownership to and from the device. Program the device only with the returned <code>dma_addr_t</code>. Peripherals without their own DMA engine use dmaengine: request a channel, configure it, prepare, submit, issue pending, and wait for the callback.</p></div>

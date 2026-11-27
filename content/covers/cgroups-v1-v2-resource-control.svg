@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+<defs>
+  <pattern id="g" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#18283d" stroke-width="1"/></pattern>
+  <marker id="ac" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f08a4b"/></marker>
+  <marker id="at" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#43c2b8"/></marker>
+  <marker id="am" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9aa8ba"/></marker>
+  <style>
+    .t1{font:600 60px 'IBM Plex Sans Condensed';fill:#e9eef5;letter-spacing:-0.5px}
+    .t2{font:500 30px 'IBM Plex Sans Condensed';fill:#9aa8ba}
+    .chip{font:500 18px 'IBM Plex Mono';fill:#f08a4b}
+    .brand{font:600 22px 'IBM Plex Sans Condensed';fill:#e9eef5}
+    .l{font:500 17px 'IBM Plex Sans';fill:#e9eef5}
+    .s{font:400 14px 'IBM Plex Sans';fill:#9aa8ba}
+    .m{font:500 15px 'IBM Plex Mono';fill:#e9eef5}
+    .ms{font:400 13px 'IBM Plex Mono';fill:#9aa8ba}
+    .box{fill:#15253a;stroke:#34465d;stroke-width:1.5}
+    .cu{fill:#3a2416;stroke:#f08a4b;stroke-width:2}
+    .te{fill:#123331;stroke:#43c2b8;stroke-width:2}
+    .amb{fill:#352711;stroke:#f2b65a;stroke-width:2}
+    .lc{fill:none;stroke:#f08a4b;stroke-width:2.5}
+    .lt{fill:none;stroke:#43c2b8;stroke-width:2.5}
+    .lm{fill:none;stroke:#9aa8ba;stroke-width:1.8}
+    .dash{stroke-dasharray:7 6}
+    .tc{fill:#f08a4b} .tt{fill:#43c2b8} .ta{fill:#f2b65a}
+  </style>
+</defs>
+<rect width="1200" height="630" fill="#0f1b2d"/>
+<rect width="1200" height="630" fill="url(#g)"/>
+<rect x="0" y="0" width="1200" height="6" fill="#f08a4b"/>
+<text class="chip" x="64" y="88">LNX  /  Linux systems</text>
+<text class="t1" x="64" y="168">cgroups and</text>
+<text class="t1" x="64" y="236">cgroup v2</text>
+<text class="t2" x="64" y="292">Resource control in Linux, with examples</text>
+<g transform="translate(64,548)">
+  <g transform="rotate(-8 8 14)"><rect x="0" y="0" width="7" height="18" rx="2" fill="#f08a4b"/><rect x="11" y="4" width="7" height="11" rx="2" fill="#f08a4b"/><rect x="0" y="22" width="7" height="11" rx="2" fill="#f08a4b"/><rect x="11" y="19" width="7" height="18" rx="2" fill="#f08a4b"/></g>
+  <text class="brand" x="32" y="26">LowLevel <tspan fill="#f08a4b">Labs</tspan></text>
+  <text class="s" x="190" y="25">lowlevellabs.in</text>
+</g>
+
+<g transform="translate(600,58)">
+  <rect class="box" x="140" y="0" width="260" height="48" rx="8"/><text class="m" x="160" y="30">/sys/fs/cgroup</text>
+  <path class="lm" d="M270 48v22M85 70h370M85 70v20M270 70v20M455 70v20"/>
+  <rect class="te" x="0" y="90" width="170" height="210" rx="10"/><text class="l" x="16" y="120">web.service</text><text class="ms" x="16" y="146">cpu.max  2 CPU</text><text class="ms" x="16" y="166">memory.max  2G</text><rect class="box" x="16" y="220" width="138" height="28" rx="5"/><text class="ms" x="28" y="239">nginx</text><rect class="box" x="16" y="256" width="138" height="28" rx="5"/><text class="ms" x="28" y="275">worker ×4</text>
+  <rect class="cu" x="185" y="90" width="170" height="210" rx="10"/><text class="l" x="201" y="120">db.service</text><text class="ms" x="201" y="146">cpu.weight  300</text><text class="ms" x="201" y="166">memory.low  4G</text><rect class="box" x="201" y="220" width="138" height="28" rx="5"/><text class="ms" x="213" y="239">postgres</text>
+  <rect class="amb" x="370" y="90" width="170" height="210" rx="10"/><text class="l" x="386" y="120">batch.slice</text><text class="ms" x="386" y="146">cpu.max  0.5 CPU</text><text class="ms" x="386" y="166">pids.max  64</text><rect class="box" x="386" y="220" width="138" height="28" rx="5"/><text class="ms" x="398" y="239">make</text><rect class="box" x="386" y="256" width="138" height="28" rx="5"/><text class="ms" x="398" y="275">cc1 ×N</text>
+  <rect class="box" x="0" y="330" width="540" height="90" rx="8"/>
+  <text class="m" x="18" y="358">echo "50000 100000" &gt; cpu.max</text>
+  <text class="m" x="18" y="382">echo 100M &gt; memory.max</text>
+  <text class="m" x="18" y="406">echo $PID &gt; cgroup.procs</text>
+</g>
+</svg>
